@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ShieldCheck,
@@ -13,16 +13,45 @@ import {
   ArrowUpRight,
   AlertCircle,
 } from "lucide-react";
-import { SEED_ORDERS, type Order, type OrderStatus } from "@/lib/api";
+import {
+  SEED_ORDERS,
+  SEED_ESCROW_TRANSACTIONS,
+  fiverrApi,
+  type Order,
+  type OrderStatus,
+  type EscrowTransactionItem,
+} from "@/lib/api";
 
 export default function OrdersWorkspacePage() {
   const [orders, setOrders] = useState<Order[]>(SEED_ORDERS);
+  const [escrows, setEscrows] = useState<EscrowTransactionItem[]>(SEED_ESCROW_TRANSACTIONS);
   const [selectedOrderId, setSelectedOrderId] = useState<string>(SEED_ORDERS[0].id);
   const [roleView, setRoleView] = useState<"BUYER" | "SELLER">("BUYER");
   const [deliveryInput, setDeliveryInput] = useState<string>("");
   const [actionToast, setActionToast] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<boolean>(false);
+
+  useEffect(() => {
+    async function loadOrdersAndEscrow() {
+      const [liveOrders, liveEscrows] = await Promise.all([
+        fiverrApi.getOrders(),
+        fiverrApi.getEscrowTransactions(),
+      ]);
+      if (liveOrders && liveOrders.length > 0) {
+        setOrders(liveOrders);
+        setSelectedOrderId((prev) =>
+          liveOrders.some((o) => o.id === prev) ? prev : liveOrders[0].id
+        );
+      }
+      if (liveEscrows && liveEscrows.length > 0) {
+        setEscrows(liveEscrows);
+      }
+    }
+    loadOrdersAndEscrow();
+  }, []);
 
   const activeOrder = orders.find((o) => o.id === selectedOrderId) || orders[0];
+  const activeEscrow = escrows.find((e) => e.orderId === activeOrder.id);
 
   function updateOrderStatus(orderId: string, newStatus: OrderStatus, note?: string) {
     setOrders((prev) =>
@@ -41,29 +70,58 @@ export default function OrdersWorkspacePage() {
     );
   }
 
-  function handleSubmitDelivery(e: React.FormEvent) {
+  async function handleSubmitDelivery(e: React.FormEvent) {
     e.preventDefault();
+    setBusyAction(true);
     const note =
       deliveryInput.trim() ||
       "Updated build artifacts and Helm release manifests uploaded for verification.";
-    updateOrderStatus(activeOrder.id, "DELIVERED", note);
+    const updated = await fiverrApi.deliverOrder(activeOrder.id, {
+      sellerId: activeOrder.sellerId,
+      deliveryNote: note,
+      deliverableUrl: "https://github.com/fiverrex/deliverables-release-v1.zip",
+    });
+    updateOrderStatus(activeOrder.id, updated.status || "DELIVERED", note);
     setDeliveryInput("");
+    setBusyAction(false);
     setActionToast(
-      `Order ${activeOrder.orderNumber} marked as DELIVERED. Kafka OrderDeliveredEvent published!`
+      `Order ${activeOrder.orderNumber} marked as DELIVERED via POST /api/v1/orders/${activeOrder.id.slice(
+        0,
+        8
+      )}/deliver!`
     );
   }
 
-  function handleRequestRevision() {
-    updateOrderStatus(activeOrder.id, "REVISION_REQUESTED");
+  async function handleRequestRevision() {
+    setBusyAction(true);
+    const updated = await fiverrApi.requestRevision(activeOrder.id, {
+      buyerId: activeOrder.buyerId,
+      reason: "Please add additional integration test coverage and Helm values documentation.",
+    });
+    updateOrderStatus(activeOrder.id, updated.status || "REVISION_REQUESTED");
+    setBusyAction(false);
     setActionToast(
-      `Revision requested on ${activeOrder.orderNumber}. Seller notified via fiverr-notification-service.`
+      `Revision requested on ${activeOrder.orderNumber} via POST /api/v1/orders/${activeOrder.id.slice(
+        0,
+        8
+      )}/revisions.`
     );
   }
 
-  function handleApproveAndReleaseEscrow() {
+  async function handleApproveAndReleaseEscrow() {
+    setBusyAction(true);
+    const [, releasedEscrow] = await Promise.all([
+      fiverrApi.completeOrder(activeOrder.id, activeOrder.buyerId),
+      fiverrApi.releaseEscrow(activeOrder.id),
+    ]);
     updateOrderStatus(activeOrder.id, "COMPLETED");
+    setEscrows((prev) =>
+      prev.map((e) => (e.orderId === activeOrder.id ? { ...e, status: releasedEscrow.status } : e))
+    );
+    setBusyAction(false);
+    window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
     setActionToast(
-      `Escrow of $${activeOrder.totalEscrow.toFixed(2)} released to ${activeOrder.sellerName}'s wallet! Kafka OrderCompletedEvent emitted.`
+      `Escrow of $${activeOrder.totalEscrow.toFixed(2)} released to ${activeOrder.sellerName}'s wallet via POST /api/v1/payments/escrow/release!`
     );
   }
 
@@ -229,6 +287,11 @@ export default function OrdersWorkspacePage() {
                     <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-700">
                       {activeOrder.packageTier} Tier
                     </span>
+                    {activeEscrow?.gatewayChargeId && (
+                      <span className="rounded bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800">
+                        {activeEscrow.gatewayChargeId}
+                      </span>
+                    )}
                   </div>
                   <Link
                     href={`/gigs/${activeOrder.gigId}`}
@@ -238,7 +301,8 @@ export default function OrdersWorkspacePage() {
                     <ArrowUpRight className="h-4 w-4" />
                   </Link>
                   <p className="mt-1 text-xs text-gray-500">
-                    Seller: <span className="font-semibold text-gray-800">{activeOrder.sellerName}</span> (
+                    Seller:{" "}
+                    <span className="font-semibold text-gray-800">{activeOrder.sellerName}</span> (
                     {activeOrder.sellerLevel}) • Buyer:{" "}
                     <span className="font-semibold text-gray-800">{activeOrder.buyerName}</span>
                   </p>
@@ -249,7 +313,9 @@ export default function OrdersWorkspacePage() {
                 <div className="flex items-center justify-end gap-1 text-[11px] font-bold text-emerald-800">
                   <Lock className="h-3.5 w-3.5 text-[#1dbf73]" />
                   <span>
-                    {activeOrder.status === "COMPLETED" ? "Escrow Released" : "Held in Escrow"}
+                    {activeOrder.status === "COMPLETED" || activeEscrow?.status === "RELEASED"
+                      ? "Escrow Released"
+                      : "Held in Escrow"}
                   </span>
                 </div>
                 <p className="text-xl font-extrabold text-gray-900">
@@ -379,19 +445,25 @@ export default function OrdersWorkspacePage() {
                     <div className="flex flex-wrap gap-3">
                       <button
                         type="button"
+                        disabled={busyAction}
                         onClick={handleApproveAndReleaseEscrow}
-                        className="inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#19a463]"
+                        className="inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#19a463] disabled:opacity-50"
                       >
                         <CheckCircle2 className="h-4 w-4" />
                         <span>
-                          Approve Delivery &amp; Release Escrow (${activeOrder.totalEscrow.toFixed(2)})
+                          {busyAction
+                            ? "Releasing Escrow..."
+                            : `Approve Delivery & Release Escrow ($${activeOrder.totalEscrow.toFixed(
+                                2
+                              )})`}
                         </span>
                       </button>
 
                       <button
                         type="button"
+                        disabled={busyAction}
                         onClick={handleRequestRevision}
-                        className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                        className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                       >
                         <RefreshCw className="h-4 w-4 text-amber-600" />
                         <span>Request Revision</span>
@@ -413,10 +485,13 @@ export default function OrdersWorkspacePage() {
                   />
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#0a4226] px-5 py-3 text-xs font-bold text-white transition hover:bg-emerald-900"
+                    disabled={busyAction}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#0a4226] px-5 py-3 text-xs font-bold text-white transition hover:bg-emerald-900 disabled:opacity-50"
                   >
                     <UploadCloud className="h-4 w-4 text-[#1dbf73]" />
-                    <span>Submit Delivery &amp; Notify Buyer</span>
+                    <span>
+                      {busyAction ? "Uploading Delivery..." : "Submit Delivery & Notify Buyer"}
+                    </span>
                   </button>
                 </form>
               )}

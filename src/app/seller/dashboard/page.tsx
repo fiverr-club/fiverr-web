@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Wallet,
@@ -19,14 +19,20 @@ import {
   SEED_ORDERS,
   SEED_GIGS,
   CATEGORIES,
+  fiverrApi,
+  getAuthSession,
   type Gig,
+  type Order,
 } from "@/lib/api";
 
 export default function SellerDashboardPage() {
   const [stats, setStats] = useState(SEED_SELLER_STATS);
+  const [orders, setOrders] = useState<Order[]>(SEED_ORDERS);
   const [myGigs, setMyGigs] = useState<Gig[]>(SEED_GIGS.slice(0, 3));
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [withdrawBanner, setWithdrawBanner] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [publishingGig, setPublishingGig] = useState(false);
 
   // Create Gig Form State
   const [newTitle, setNewTitle] = useState("");
@@ -35,46 +41,74 @@ export default function SellerDashboardPage() {
   const [standardPrice, setStandardPrice] = useState<number>(490);
   const [premiumPrice, setPremiumPrice] = useState<number>(990);
 
-  function handleWithdrawFunds() {
-    if (stats.availableForWithdrawal <= 0) return;
+  useEffect(() => {
+    async function loadSellerStudio() {
+      const [liveStats, liveOrders, liveGigs, liveSellers] = await Promise.all([
+        fiverrApi.getSellerDashboard(),
+        fiverrApi.getOrders(),
+        fiverrApi.getGigs(),
+        fiverrApi.getSellers(),
+      ]);
+
+      if (liveStats) {
+        if (liveSellers && liveSellers.length > 0) {
+          liveStats.metrics.overallRating = Number(
+            liveSellers[0].ratingAverage || liveStats.metrics.overallRating
+          );
+        }
+        setStats(liveStats);
+      }
+      if (liveOrders && liveOrders.length > 0) {
+        setOrders(liveOrders);
+      }
+      if (liveGigs && liveGigs.length > 0) {
+        setMyGigs(liveGigs.slice(0, 6));
+      }
+    }
+    loadSellerStudio();
+  }, []);
+
+  async function handleWithdrawFunds() {
+    if (stats.availableForWithdrawal <= 0 || withdrawing) return;
+    setWithdrawing(true);
     const amount = stats.availableForWithdrawal;
+    const session = getAuthSession();
+    const updatedWallet = await fiverrApi.withdrawFunds({
+      sellerId: session.sellerId,
+      amount,
+      payoutDestination: "stripe_Express_Acct_FIVERREX",
+    });
+
     setStats((prev) => ({
       ...prev,
-      availableForWithdrawal: 0,
+      availableForWithdrawal: Number(updatedWallet.availableBalance ?? 0),
     }));
+    setWithdrawing(false);
+    window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
     setWithdrawBanner(
       `Withdrawal of $${amount.toLocaleString("en-US", {
         minimumFractionDigits: 2,
-      })} initiated via fiverr-payment-service payout adapter!`
+      })} processed via POST /api/v1/payments/wallets/withdraw!`
     );
   }
 
-  function handleCreateGig(e: React.FormEvent) {
+  async function handleCreateGig(e: React.FormEvent) {
     e.preventDefault();
-    const createdGig: Gig = {
-      ...SEED_GIGS[0],
-      id: `gig-${Date.now()}`,
-      title: newTitle.startsWith("I will") ? newTitle : `I will ${newTitle}`,
+    setPublishingGig(true);
+    const createdGig = await fiverrApi.createGig({
+      title: newTitle,
       category: newCategory,
-      startingPrice: basicPrice,
-      packages: {
-        Basic: {
-          ...SEED_GIGS[0].packages.Basic,
-          price: basicPrice,
-        },
-        Standard: {
-          ...SEED_GIGS[0].packages.Standard,
-          price: standardPrice,
-        },
-        Premium: {
-          ...SEED_GIGS[0].packages.Premium,
-          price: premiumPrice,
-        },
-      },
-    };
+      basicPrice,
+      standardPrice,
+      premiumPrice,
+    });
     setMyGigs((prev) => [createdGig, ...prev]);
     setNewTitle("");
+    setPublishingGig(false);
     setCreateModalOpen(false);
+    setWithdrawBanner(
+      `Published "${createdGig.title}" to PostgreSQL via POST /api/v1/gigs!`
+    );
   }
 
   return (
@@ -84,7 +118,9 @@ export default function SellerDashboardPage() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">
             <Award className="h-3.5 w-3.5" />
-            <span>{stats.sellerLevel} • Next Evaluation: {stats.nextEvaluationDate}</span>
+            <span>
+              {stats.sellerLevel} • Next Evaluation: {stats.nextEvaluationDate}
+            </span>
           </div>
           <h1 className="mt-2 text-2xl font-extrabold text-gray-900 sm:text-3xl">
             Seller Studio &amp; Escrow Wallet
@@ -95,11 +131,13 @@ export default function SellerDashboardPage() {
           <button
             type="button"
             onClick={handleWithdrawFunds}
-            disabled={stats.availableForWithdrawal <= 0}
+            disabled={stats.availableForWithdrawal <= 0 || withdrawing}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-xs font-bold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:opacity-50"
           >
             <Wallet className="h-4 w-4 text-[#1dbf73]" />
-            <span>Withdraw Available Balance</span>
+            <span>
+              {withdrawing ? "Withdrawing..." : "Withdraw Available Balance"}
+            </span>
           </button>
           <button
             type="button"
@@ -259,7 +297,7 @@ export default function SellerDashboardPage() {
           </div>
 
           <div className="mt-4 divide-y divide-gray-100">
-            {SEED_ORDERS.map((ord) => (
+            {orders.map((ord) => (
               <div
                 key={ord.id}
                 className="flex flex-wrap items-center justify-between gap-4 py-3.5 text-xs"
@@ -438,9 +476,10 @@ export default function SellerDashboardPage() {
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463]"
+                disabled={publishingGig}
+                className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463] disabled:opacity-50"
               >
-                Publish Gig to Marketplace
+                {publishingGig ? "Publishing to PostgreSQL..." : "Publish Gig to Marketplace"}
               </button>
             </form>
           </div>

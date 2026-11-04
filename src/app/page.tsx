@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   Search,
-  ShieldCheck,
   Sparkles,
   CheckCircle2,
   SlidersHorizontal,
@@ -13,18 +12,55 @@ import {
   Lock,
   Zap,
 } from "lucide-react";
-import { CATEGORIES, SEED_GIGS, type SellerLevel } from "@/lib/api";
+import {
+  CATEGORIES,
+  SEED_GIGS,
+  fiverrApi,
+  type Gig,
+  type GatewayStatusInfo,
+  type SellerLevel,
+} from "@/lib/api";
 import { GigCard } from "@/components/GigCard";
 
 export default function HomePage() {
+  const [gigs, setGigs] = useState<Gig[]>(SEED_GIGS);
+  const [gatewayStatus, setGatewayStatus] = useState<GatewayStatusInfo | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All Categories");
   const [selectedLevel, setSelectedLevel] = useState<string>("ALL");
   const [maxDeliveryDays, setMaxDeliveryDays] = useState<number>(30);
   const [maxBudget, setMaxBudget] = useState<number>(1500);
 
+  useEffect(() => {
+    async function loadMarketplace() {
+      const [liveGigs, liveGateway] = await Promise.all([
+        fiverrApi.getGigs(),
+        fiverrApi.getGatewayStatus(),
+      ]);
+      if (liveGigs && liveGigs.length > 0) {
+        setGigs(liveGigs);
+      }
+      if (liveGateway) {
+        setGatewayStatus(liveGateway);
+      }
+    }
+    loadMarketplace();
+  }, []);
+
+  async function handleRemoteSearch() {
+    if (!searchQuery.trim() && selectedCategory === "All Categories") {
+      const allGigs = await fiverrApi.getGigs();
+      setGigs(allGigs);
+      return;
+    }
+    const results = await fiverrApi.searchGigs(searchQuery, selectedCategory);
+    if (results && results.length > 0) {
+      setGigs(results);
+    }
+  }
+
   const filteredGigs = useMemo(() => {
-    return SEED_GIGS.filter((gig) => {
+    return gigs.filter((gig) => {
       if (selectedCategory !== "All Categories" && gig.category !== selectedCategory) {
         return false;
       }
@@ -47,7 +83,7 @@ export default function HomePage() {
       }
       return true;
     });
-  }, [searchQuery, selectedCategory, selectedLevel, maxDeliveryDays, maxBudget]);
+  }, [gigs, searchQuery, selectedCategory, selectedLevel, maxDeliveryDays, maxBudget]);
 
   const popularTags = [
     "Spring Boot",
@@ -58,6 +94,8 @@ export default function HomePage() {
     "DDD",
   ];
 
+  const routeCount = gatewayStatus?.routes?.length ?? 9;
+
   return (
     <div>
       {/* Dark Emerald Hero Banner */}
@@ -67,7 +105,9 @@ export default function HomePage() {
             <div className="space-y-6 lg:col-span-7">
               <div className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-emerald-400/30 bg-emerald-950/60 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#1dbf73]" />
-                <span>FIVERREX Enterprise • Powered by 9 DDD Microservices</span>
+                <span>
+                  FIVERREX Enterprise • Powered by {routeCount} DDD Microservice Routes
+                </span>
               </div>
 
               <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
@@ -94,6 +134,7 @@ export default function HomePage() {
                 </div>
                 <button
                   type="button"
+                  onClick={handleRemoteSearch}
                   className="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[#1dbf73] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#19a463]"
                 >
                   <span>Search Gigs</span>
@@ -129,7 +170,7 @@ export default function HomePage() {
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-300">
                     <span className="h-2 w-2 rounded-full bg-[#1dbf73]" />
-                    Healthy
+                    {gatewayStatus?.status === "UP" ? `Healthy (${routeCount} Routes)` : "Healthy"}
                   </span>
                 </div>
                 <div className="space-y-3 text-xs text-emerald-50">

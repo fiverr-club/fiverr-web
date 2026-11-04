@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Send,
   Sparkles,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import {
   SEED_CONVERSATIONS,
+  fiverrApi,
   type Conversation,
   type PackageTierName,
 } from "@/lib/api";
@@ -22,6 +23,8 @@ export default function InboxPage() {
   const [activeConvId, setActiveConvId] = useState<string>(SEED_CONVERSATIONS[0].id);
   const [messageInput, setMessageInput] = useState<string>("");
   const [offerModalOpen, setOfferModalOpen] = useState<boolean>(false);
+  const [sendingMsg, setSendingMsg] = useState<boolean>(false);
+  const [inboxToast, setInboxToast] = useState<string | null>(null);
 
   // Custom Offer Form State
   const [offerTitle, setOfferTitle] = useState<string>(
@@ -32,13 +35,48 @@ export default function InboxPage() {
   const [offerDays, setOfferDays] = useState<number>(5);
   const [offerRevisions, setOfferRevisions] = useState<number>(4);
 
+  useEffect(() => {
+    async function loadInbox() {
+      const liveConvs = await fiverrApi.getConversations();
+      if (liveConvs && liveConvs.length > 0) {
+        setConversations(liveConvs);
+        setActiveConvId((prev) =>
+          liveConvs.some((c) => c.id === prev) ? prev : liveConvs[0].id
+        );
+      }
+    }
+    loadInbox();
+  }, []);
+
   const activeConv =
     conversations.find((c) => c.id === activeConvId) || conversations[0];
 
-  function handleSendMessage(e: React.FormEvent) {
+  async function handleSelectConversation(convId: string) {
+    setActiveConvId(convId);
+    const msgs = await fiverrApi.getConversationMessages(convId);
+    if (msgs && msgs.length > 0) {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, messages: msgs, unreadCount: 0 } : c))
+      );
+    }
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!messageInput.trim()) return;
+    if (!messageInput.trim() || sendingMsg) return;
+    setSendingMsg(true);
     const text = messageInput.trim();
+    setMessageInput("");
+
+    const savedMsg = await fiverrApi.sendMessage({
+      conversationId: activeConv.id,
+      senderId: activeConv.buyerId,
+      recipientId: activeConv.sellerId,
+      gigId: activeConv.gigId,
+      content: text,
+      messageType: "TEXT",
+    });
+
     setConversations((prev) =>
       prev.map((conv) => {
         if (conv.id !== activeConv.id) return conv;
@@ -47,24 +85,33 @@ export default function InboxPage() {
           lastMessage: text,
           lastMessageTime: "Just now",
           unreadCount: 0,
-          messages: [
-            ...conv.messages,
-            {
-              id: `msg-${Date.now()}`,
-              sender: "buyer",
-              senderName: "Jordan Taylor",
-              text,
-              timestamp: "Just now",
-            },
-          ],
+          messages: [...conv.messages, savedMsg],
         };
       })
     );
-    setMessageInput("");
+    setSendingMsg(false);
   }
 
-  function handleSendCustomOffer(e: React.FormEvent) {
+  async function handleSendCustomOffer(e: React.FormEvent) {
     e.preventDefault();
+    setSendingMsg(true);
+    const offerContent = `Custom Offer: ${offerTitle} ($${offerPrice} - ${offerDays} days delivery)`;
+    const savedOfferMsg = await fiverrApi.sendMessage({
+      conversationId: activeConv.id,
+      senderId: activeConv.sellerId || "22222222-2222-2222-2222-222222222222",
+      recipientId: activeConv.buyerId || "11111111-1111-1111-1111-111111111111",
+      gigId: activeConv.gigId || "33333333-3333-3333-3333-333333333333",
+      content: offerContent,
+      messageType: "CUSTOM_OFFER",
+      customOffer: {
+        title: offerTitle,
+        packageTier: offerTier,
+        price: offerPrice,
+        deliveryDays: offerDays,
+        revisions: offerRevisions,
+      },
+    });
+
     setConversations((prev) =>
       prev.map((conv) => {
         if (conv.id !== activeConv.id) return conv;
@@ -75,28 +122,41 @@ export default function InboxPage() {
           messages: [
             ...conv.messages,
             {
-              id: `msg-offer-${Date.now()}`,
+              ...savedOfferMsg,
               sender: "seller",
               senderName: conv.participantName,
-              text: `I've prepared a custom escrow milestone offer tailored to your project scope:`,
-              timestamp: "Just now",
-              customOffer: {
-                title: offerTitle,
-                packageTier: offerTier,
-                price: offerPrice,
-                deliveryDays: offerDays,
-                revisions: offerRevisions,
-                status: "PENDING",
-              },
             },
           ],
         };
       })
     );
+    setSendingMsg(false);
     setOfferModalOpen(false);
+    setInboxToast("Custom offer dispatched via POST /api/v1/messages!");
   }
 
-  function handleAcceptOffer(msgId: string) {
+  async function handleAcceptOffer(msgId: string) {
+    const targetMsg = activeConv.messages.find((m) => m.id === msgId);
+    const offer = targetMsg?.customOffer;
+    if (offer) {
+      const createdOrder = await fiverrApi.createOrder({
+        gigId: offer.gigId || activeConv.gigId || "33333333-3333-3333-3333-333333333333",
+        packageTier: offer.packageTier || "Standard",
+        requirements: `Accepted Custom Offer: ${offer.title}`,
+        amount: offer.price,
+        sellerId: activeConv.sellerId,
+      });
+      await fiverrApi.holdEscrow({
+        orderId: createdOrder.id,
+        sellerId: activeConv.sellerId,
+        grossAmount: offer.price,
+      });
+      setInboxToast(
+        `Custom Offer accepted! Order ${createdOrder.orderNumber} created & $${offer.price} locked in Escrow.`
+      );
+      window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
+    }
+
     setConversations((prev) =>
       prev.map((conv) => {
         if (conv.id !== activeConv.id) return conv;
@@ -140,6 +200,22 @@ export default function InboxPage() {
         </button>
       </div>
 
+      {inboxToast && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-950">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-[#1dbf73]" />
+            <span>{inboxToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setInboxToast(null)}
+            className="text-emerald-700 hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="grid min-h-[600px] grid-cols-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:grid-cols-12">
         {/* Left Conversation Sidebar */}
         <div className="border-b border-gray-200 bg-gray-50/50 lg:col-span-4 lg:border-b-0 lg:border-r">
@@ -156,7 +232,7 @@ export default function InboxPage() {
                 <button
                   key={conv.id}
                   type="button"
-                  onClick={() => setActiveConvId(conv.id)}
+                  onClick={() => handleSelectConversation(conv.id)}
                   className={`flex w-full items-start gap-3 p-4 text-left transition ${
                     isSelected ? "bg-emerald-50/70" : "hover:bg-gray-100/70"
                   }`}
@@ -320,10 +396,11 @@ export default function InboxPage() {
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#1dbf73] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#19a463]"
+              disabled={sendingMsg}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#1dbf73] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#19a463] disabled:opacity-50"
             >
               <Send className="h-3.5 w-3.5" />
-              <span>Send</span>
+              <span>{sendingMsg ? "Sending..." : "Send"}</span>
             </button>
           </form>
         </div>
@@ -406,9 +483,10 @@ export default function InboxPage() {
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463]"
+                disabled={sendingMsg}
+                className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463] disabled:opacity-50"
               >
-                Send Custom Offer to Thread
+                {sendingMsg ? "Dispatching Offer..." : "Send Custom Offer to Thread"}
               </button>
             </form>
           </div>

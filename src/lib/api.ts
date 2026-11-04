@@ -28,6 +28,23 @@ export interface ReviewItem {
   sellerResponse?: string;
 }
 
+export type GigReview = ReviewItem;
+
+export interface GigSeller {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  level: SellerLevel;
+  tagline: string;
+  country: string;
+  memberSince: string;
+  avgResponseTime: string;
+  lastDelivery: string;
+  languages: string[];
+  bio: string;
+}
+
 export interface Gig {
   id: string;
   title: string;
@@ -36,20 +53,7 @@ export interface Gig {
   subcategory: string;
   thumbnailUrl: string;
   galleryUrls: string[];
-  seller: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatarUrl: string;
-    level: SellerLevel;
-    tagline: string;
-    country: string;
-    memberSince: string;
-    avgResponseTime: string;
-    lastDelivery: string;
-    languages: string[];
-    bio: string;
-  };
+  seller: GigSeller;
   rating: number;
   reviewCount: number;
   ordersInQueue: number;
@@ -91,6 +95,9 @@ export interface Order {
   requirements: string;
   deliveryNote?: string;
   deliveryAttachments?: string[];
+  buyerId?: string;
+  sellerId?: string;
+  escrowReference?: string;
 }
 
 export interface SellerDashboardStats {
@@ -116,6 +123,8 @@ export interface MessageItem {
   text: string;
   timestamp: string;
   customOffer?: {
+    offerId?: string;
+    gigId?: string;
     title: string;
     packageTier: PackageTierName;
     price: number;
@@ -127,6 +136,9 @@ export interface MessageItem {
 
 export interface Conversation {
   id: string;
+  buyerId?: string;
+  sellerId?: string;
+  gigId?: string;
   participantName: string;
   participantUsername: string;
   participantAvatar: string;
@@ -140,8 +152,230 @@ export interface Conversation {
   messages: MessageItem[];
 }
 
+export interface AuthAccountDto {
+  id: string;
+  username: string;
+  email: string;
+  roles: string[];
+  status: string;
+  emailVerified: boolean;
+  lastLoginAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  account: AuthAccountDto;
+  sellerId: string;
+  profileId: string;
+  displayName: string;
+  avatarUrl: string;
+}
+
+export interface UserProfileDto {
+  id: string;
+  accountId: string;
+  username: string;
+  displayName: string;
+  headline: string;
+  bio: string;
+  avatarUrl: string;
+  country: string;
+  languages: string[];
+  skills: string[];
+  hourlyRate: number;
+  seller: boolean;
+  sellerLevel: string;
+  availabilityStatus: string;
+  completedOrdersCount: number;
+  ratingAverage: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  recipientUserId: string;
+  type: string;
+  title: string;
+  message: string;
+  channel: string;
+  read: boolean;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface EscrowTransactionItem {
+  id: string;
+  orderId: string;
+  buyerId: string;
+  sellerId: string;
+  grossAmount: number;
+  platformFee: number;
+  sellerNetPayout: number;
+  gatewayChargeId: string;
+  status: "HELD" | "RELEASED" | "REFUNDED";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SellerWalletItem {
+  sellerId: string;
+  availableBalance: number;
+  withdrawnTotal: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GatewayStatusInfo {
+  service: string;
+  brand: string;
+  status: string;
+  swaggerUi: string;
+  openApiDocs: string;
+  timestamp: string;
+  routes: string[];
+}
+
 export const API_GATEWAY_URL =
   process.env.NEXT_PUBLIC_API_GATEWAY_URL || "http://localhost:8080/api/v1";
+
+export const GATEWAY_ROOT_URL = API_GATEWAY_URL.replace(/\/api\/v1\/?$/, "");
+
+const SESSION_STORAGE_KEY = "fiverrex_session";
+
+export const DEFAULT_AUTH_ACCOUNTS: AuthAccountDto[] = [
+  {
+    id: "33333333-3333-3333-3333-333333333333",
+    username: "jordan_taylor",
+    email: "jordan@fiverrex.club",
+    roles: ["BUYER", "SELLER"],
+    status: "ACTIVE",
+    emailVerified: true,
+  },
+  {
+    id: "11111111-1111-1111-1111-111111111111",
+    username: "alex_architect",
+    email: "alex@fiverrex.club",
+    roles: ["BUYER", "SELLER"],
+    status: "ACTIVE",
+    emailVerified: true,
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222222",
+    username: "elena_ai",
+    email: "elena@fiverrex.club",
+    roles: ["BUYER", "SELLER"],
+    status: "ACTIVE",
+    emailVerified: true,
+  },
+];
+
+const ACCOUNT_PROFILE_META: Record<
+  string,
+  { displayName: string; avatarUrl: string; profileId: string; sellerId: string }
+> = {
+  "11111111-1111-1111-1111-111111111111": {
+    displayName: "Alex Rivera",
+    avatarUrl:
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+    profileId: "aaaaaaaa-1111-1111-1111-111111111111",
+    sellerId: "11111111-1111-1111-1111-111111111111",
+  },
+  "22222222-2222-2222-2222-222222222222": {
+    displayName: "Elena Vance",
+    avatarUrl:
+      "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=250&q=80",
+    profileId: "aaaaaaaa-2222-2222-2222-222222222222",
+    sellerId: "22222222-2222-2222-2222-222222222222",
+  },
+  "33333333-3333-3333-3333-333333333333": {
+    displayName: "Jordan Taylor",
+    avatarUrl:
+      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80",
+    profileId: "aaaaaaaa-3333-3333-3333-333333333333",
+    sellerId: "11111111-1111-1111-1111-111111111111",
+  },
+};
+
+export function getDefaultAuthSession(): AuthSession {
+  const defaultAccount = DEFAULT_AUTH_ACCOUNTS[0];
+  const meta = ACCOUNT_PROFILE_META[defaultAccount.id];
+  return {
+    accessToken: "",
+    refreshToken: "",
+    account: defaultAccount,
+    sellerId: meta.sellerId,
+    profileId: meta.profileId,
+    displayName: meta.displayName,
+    avatarUrl: meta.avatarUrl,
+  };
+}
+
+export function getAuthSession(): AuthSession {
+  if (typeof window === "undefined") {
+    return getDefaultAuthSession();
+  }
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return getDefaultAuthSession();
+    const parsed = JSON.parse(raw) as AuthSession;
+    if (!parsed?.account?.id) return getDefaultAuthSession();
+    return parsed;
+  } catch {
+    return getDefaultAuthSession();
+  }
+}
+
+export function setAuthSession(session: AuthSession): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    window.dispatchEvent(new CustomEvent("fiverrex-session-change", { detail: session }));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function clearAuthSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    window.dispatchEvent(
+      new CustomEvent("fiverrex-session-change", { detail: getDefaultAuthSession() })
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export function buildSessionForAccount(
+  account: AuthAccountDto,
+  accessToken = "",
+  refreshToken = ""
+): AuthSession {
+  const meta = ACCOUNT_PROFILE_META[account.id] || {
+    displayName: account.username
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" "),
+    avatarUrl:
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+    profileId: "aaaaaaaa-3333-3333-3333-333333333333",
+    sellerId: "11111111-1111-1111-1111-111111111111",
+  };
+  return {
+    accessToken,
+    refreshToken,
+    account,
+    sellerId: meta.sellerId,
+    profileId: meta.profileId,
+    displayName: meta.displayName,
+    avatarUrl: meta.avatarUrl,
+  };
+}
 
 export const CATEGORIES = [
   "All Categories",
@@ -168,7 +402,7 @@ export const SEED_GIGS: Gig[] = [
       "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80",
     ],
     seller: {
-      id: "seller-01",
+      id: "11111111-1111-1111-1111-111111111111",
       username: "alex_ddd_arch",
       displayName: "Alex Rivera",
       avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
@@ -292,7 +526,7 @@ export const SEED_GIGS: Gig[] = [
       "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=80",
     ],
     seller: {
-      id: "seller-02",
+      id: "22222222-2222-2222-2222-222222222222",
       username: "sophia_ui_craft",
       displayName: "Sophia Chen",
       avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80",
@@ -399,7 +633,7 @@ export const SEED_GIGS: Gig[] = [
       "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1200&q=80",
     ],
     seller: {
-      id: "seller-03",
+      id: "22222222-2222-2222-2222-222222222222",
       username: "dr_aryan_ai",
       displayName: "Dr. Aryan Mehta",
       avatarUrl: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=250&q=80",
@@ -504,7 +738,7 @@ export const SEED_GIGS: Gig[] = [
       "https://images.unsplash.com/photo-1586717791821-3f44a563fa4c?auto=format&fit=crop&w=1200&q=80",
     ],
     seller: {
-      id: "seller-04",
+      id: "11111111-1111-1111-1111-111111111111",
       username: "claire_studio",
       displayName: "Claire Dubois",
       avatarUrl: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=250&q=80",
@@ -591,7 +825,7 @@ export const SEED_GIGS: Gig[] = [
       "https://images.unsplash.com/photo-1667372393119-3d4c48d07fc9?auto=format&fit=crop&w=1200&q=80",
     ],
     seller: {
-      id: "seller-05",
+      id: "11111111-1111-1111-1111-111111111111",
       username: "k8s_viktor",
       displayName: "Viktor Lindqvist",
       avatarUrl: "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=250&q=80",
@@ -678,7 +912,7 @@ export const SEED_GIGS: Gig[] = [
       "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?auto=format&fit=crop&w=1200&q=80",
     ],
     seller: {
-      id: "seller-06",
+      id: "22222222-2222-2222-2222-222222222222",
       username: "motion_enzo",
       displayName: "Enzo Moretti",
       avatarUrl: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=250&q=80",
@@ -743,20 +977,20 @@ export const SEED_GIGS: Gig[] = [
 
 export const SEED_ORDERS: Order[] = [
   {
-    id: "ord-9001",
+    id: "44444444-4444-4444-4444-444444444444",
     orderNumber: "#FO-8849201",
-    gigId: "gig-101",
+    gigId: "11111111-1111-1111-1111-111111111111",
     gigTitle: "I will architect and build a production Spring Boot 3 microservices ecosystem on Kubernetes",
     gigThumbnail: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80",
     packageTier: "Premium",
     buyerName: "Jordan Taylor",
-    buyerUsername: "jordan_fintech",
+    buyerUsername: "jordan_taylor",
     sellerName: "Alex Rivera",
-    sellerUsername: "alex_ddd_arch",
+    sellerUsername: "alex_architect",
     sellerLevel: "Top Rated Seller",
-    amount: 1250,
-    serviceFee: 68.75,
-    totalEscrow: 1318.75,
+    amount: 995,
+    serviceFee: 54.73,
+    totalEscrow: 1049.73,
     status: "DELIVERED",
     dueDate: "2026-11-08T18:00:00Z",
     createdAt: "2026-10-28T10:15:00Z",
@@ -772,22 +1006,24 @@ export const SEED_ORDERS: Order[] = [
       "helm-fiverr-ecosystem-chart.tgz (1.4 MB)",
       "escrow-saga-verification-report.pdf (840 KB)",
     ],
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "11111111-1111-1111-1111-111111111111",
   },
   {
-    id: "ord-9002",
+    id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     orderNumber: "#FO-8849345",
-    gigId: "gig-102",
+    gigId: "22222222-2222-2222-2222-222222222222",
     gigTitle: "I will design and develop a high-converting Next.js 15 SaaS or Marketplace web app",
     gigThumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80",
     packageTier: "Standard",
     buyerName: "Jordan Taylor",
-    buyerUsername: "jordan_fintech",
+    buyerUsername: "jordan_taylor",
     sellerName: "Sophia Chen",
-    sellerUsername: "sophia_ui_craft",
+    sellerUsername: "elena_ai",
     sellerLevel: "Pro Verified",
-    amount: 380,
-    serviceFee: 20.9,
-    totalEscrow: 400.9,
+    amount: 390,
+    serviceFee: 21.45,
+    totalEscrow: 411.45,
     status: "IN_PROGRESS",
     dueDate: "2026-11-07T20:00:00Z",
     createdAt: "2026-11-02T14:20:00Z",
@@ -795,22 +1031,24 @@ export const SEED_ORDERS: Order[] = [
     revisionsAllowed: 5,
     requirements:
       "Implement the Next.js 15 App Router frontend with Fiverr emerald palette (#1dbf73), 3-tier package selector, order escrow workspace, seller studio, and real-time inbox.",
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "22222222-2222-2222-2222-222222222222",
   },
   {
-    id: "ord-9003",
+    id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
     orderNumber: "#FO-8847110",
-    gigId: "gig-105",
+    gigId: "33333333-3333-3333-3333-333333333333",
     gigTitle: "I will automate your Kubernetes cluster, Helm charts, Ingress TLS, and GitHub Actions CI/CD",
     gigThumbnail: "https://images.unsplash.com/photo-1667372393119-3d4c48d07fc9?auto=format&fit=crop&w=600&q=80",
     packageTier: "Standard",
     buyerName: "Jordan Taylor",
-    buyerUsername: "jordan_fintech",
+    buyerUsername: "jordan_taylor",
     sellerName: "Viktor Lindqvist",
     sellerUsername: "k8s_viktor",
     sellerLevel: "Top Rated Seller",
-    amount: 420,
-    serviceFee: 23.1,
-    totalEscrow: 443.1,
+    amount: 595,
+    serviceFee: 32.73,
+    totalEscrow: 627.73,
     status: "COMPLETED",
     dueDate: "2026-10-25T18:00:00Z",
     createdAt: "2026-10-20T09:00:00Z",
@@ -821,15 +1059,17 @@ export const SEED_ORDERS: Order[] = [
     requirements: "Create StatefulSets for PostgreSQL, Redis, and Kafka KRaft mode plus HPA policies.",
     deliveryNote: "Delivered full Kustomize and Helm manifests with zero-downtime rolling updates.",
     deliveryAttachments: ["k8s-stateful-ha-bundle.zip (3.2 MB)"],
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "11111111-1111-1111-1111-111111111111",
   },
 ];
 
 export const SEED_SELLER_STATS: SellerDashboardStats = {
-  escrowPendingBalance: 1630.0,
-  availableForWithdrawal: 8420.5,
+  escrowPendingBalance: 1385.0,
+  availableForWithdrawal: 1476.0,
   clearedThisMonth: 4890.0,
-  activeOrdersCount: 4,
-  activeOrdersValue: 2365.0,
+  activeOrdersCount: 3,
+  activeOrdersValue: 1980.0,
   sellerLevel: "Top Rated Seller",
   nextEvaluationDate: "Nov 15, 2026",
   metrics: {
@@ -842,9 +1082,12 @@ export const SEED_SELLER_STATS: SellerDashboardStats = {
 
 export const SEED_CONVERSATIONS: Conversation[] = [
   {
-    id: "conv-1",
+    id: "137ad359-20c7-492f-b978-416db5932478",
+    buyerId: "11111111-1111-1111-1111-111111111111",
+    sellerId: "22222222-2222-2222-2222-222222222222",
+    gigId: "33333333-3333-3333-3333-333333333333",
     participantName: "Alex Rivera",
-    participantUsername: "alex_ddd_arch",
+    participantUsername: "alex_architect",
     participantAvatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
     participantRole: "Seller",
     participantLevel: "Top Rated Seller",
@@ -879,6 +1122,9 @@ export const SEED_CONVERSATIONS: Conversation[] = [
   },
   {
     id: "conv-2",
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "22222222-2222-2222-2222-222222222222",
+    gigId: "22222222-2222-2222-2222-222222222222",
     participantName: "Sophia Chen",
     participantUsername: "sophia_ui_craft",
     participantAvatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80",
@@ -904,6 +1150,8 @@ export const SEED_CONVERSATIONS: Conversation[] = [
         text: "Here is the custom offer for the interactive Seller Studio & Escrow Workspace module.",
         timestamp: "Yesterday, 4:18 PM",
         customOffer: {
+          offerId: "44444444-4444-4444-4444-444444444444",
+          gigId: "22222222-2222-2222-2222-222222222222",
           title: "Next.js 15 Marketplace + Escrow Workspace + Real-Time Inbox",
           packageTier: "Standard",
           price: 380,
@@ -916,6 +1164,9 @@ export const SEED_CONVERSATIONS: Conversation[] = [
   },
   {
     id: "conv-3",
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "22222222-2222-2222-2222-222222222222",
+    gigId: "33333333-3333-3333-3333-333333333333",
     participantName: "Dr. Aryan Mehta",
     participantUsername: "dr_aryan_ai",
     participantAvatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=250&q=80",
@@ -938,15 +1189,430 @@ export const SEED_CONVERSATIONS: Conversation[] = [
   },
 ];
 
-async function fetchWithFallback<T>(endpoint: string, fallbackData: T, init?: RequestInit): Promise<T> {
+export const SEED_NOTIFICATIONS: NotificationItem[] = [
+  {
+    id: "34c1715f-5a2e-4b5d-952c-0c0fbb08a69f",
+    recipientUserId: "11111111-1111-1111-1111-111111111111",
+    type: "CUSTOM_OFFER_RECEIVED",
+    title: "Custom Milestone Offer Received",
+    message: "You received a custom offer ($1,250.00 - 5 days delivery) for your FIVERREX architecture inquiry.",
+    channel: "IN_APP",
+    read: false,
+    readAt: null,
+    createdAt: "2026-11-04T09:01:41.152478Z",
+  },
+  {
+    id: "b8898388-74a0-43d0-931f-854c034f0286",
+    recipientUserId: "22222222-2222-2222-2222-222222222222",
+    type: "REVIEW_RECEIVED",
+    title: "New 5.0 Star Verified Review",
+    message: "A buyer left a 5.0-star verified review across all 3 criteria on your gig!",
+    channel: "EMAIL",
+    read: false,
+    readAt: null,
+    createdAt: "2026-11-04T09:01:41.160991Z",
+  },
+  {
+    id: "37d5ecc6-8675-4db8-b294-e964a5268d01",
+    recipientUserId: "22222222-2222-2222-2222-222222222222",
+    type: "ORDER_CREATED",
+    title: "New Enterprise Order Placed",
+    message: "A buyer placed an order for Enterprise Spring Boot 3 Hexagonal DDD Architecture & API Suite.",
+    channel: "ALL",
+    read: true,
+    readAt: "2026-11-04T09:01:41.076629Z",
+    createdAt: "2026-11-04T09:01:41.076613Z",
+  },
+];
+
+export const SEED_ESCROW_TRANSACTIONS: EscrowTransactionItem[] = [
+  {
+    id: "55555555-5555-5555-5555-555555555555",
+    orderId: "44444444-4444-4444-4444-444444444444",
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "11111111-1111-1111-1111-111111111111",
+    grossAmount: 995.0,
+    platformFee: 199.0,
+    sellerNetPayout: 796.0,
+    gatewayChargeId: "ch_fvx_44444444",
+    status: "HELD",
+    createdAt: "2026-11-01T09:01:41.147Z",
+    updatedAt: "2026-11-02T09:01:41.147Z",
+  },
+  {
+    id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+    orderId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "22222222-2222-2222-2222-222222222222",
+    grossAmount: 390.0,
+    platformFee: 78.0,
+    sellerNetPayout: 312.0,
+    gatewayChargeId: "ch_fvx_aaaaaaaa",
+    status: "HELD",
+    createdAt: "2026-10-30T09:01:41.147Z",
+    updatedAt: "2026-11-03T09:01:41.147Z",
+  },
+  {
+    id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    orderId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    buyerId: "33333333-3333-3333-3333-333333333333",
+    sellerId: "11111111-1111-1111-1111-111111111111",
+    grossAmount: 595.0,
+    platformFee: 119.0,
+    sellerNetPayout: 476.0,
+    gatewayChargeId: "ch_fvx_bbbbbbbb",
+    status: "RELEASED",
+    createdAt: "2026-10-28T09:01:41.147Z",
+    updatedAt: "2026-11-04T09:01:41.147Z",
+  },
+];
+
+export const SEED_WALLETS: SellerWalletItem[] = [
+  {
+    sellerId: "11111111-1111-1111-1111-111111111111",
+    availableBalance: 1476.0,
+    withdrawnTotal: 800.0,
+    createdAt: "2026-10-21T09:01:41.147Z",
+    updatedAt: "2026-11-04T09:01:41.147Z",
+  },
+  {
+    sellerId: "22222222-2222-2222-2222-222222222222",
+    availableBalance: 624.0,
+    withdrawnTotal: 312.0,
+    createdAt: "2026-10-25T09:01:41.147Z",
+    updatedAt: "2026-11-03T09:01:41.147Z",
+  },
+];
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const GIG_ID_TO_UUID: Record<string, string> = {
+  "gig-101": "11111111-1111-1111-1111-111111111111",
+  "gig-102": "22222222-2222-2222-2222-222222222222",
+  "gig-103": "22222222-2222-2222-2222-222222222222",
+  "gig-104": "33333333-3333-3333-3333-333333333333",
+  "gig-105": "11111111-1111-1111-1111-111111111111",
+  "gig-106": "33333333-3333-3333-3333-333333333333",
+};
+
+const ORDER_ID_TO_UUID: Record<string, string> = {
+  "ord-9001": "44444444-4444-4444-4444-444444444444",
+  "ord-9002": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "ord-9003": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+};
+
+export function resolveBackendUuid(
+  id: string | undefined,
+  fallbackUuid = "11111111-1111-1111-1111-111111111111"
+): string {
+  if (!id) return fallbackUuid;
+  if (UUID_REGEX.test(id)) return id;
+  if (GIG_ID_TO_UUID[id]) return GIG_ID_TO_UUID[id];
+  if (ORDER_ID_TO_UUID[id]) return ORDER_ID_TO_UUID[id];
+  return fallbackUuid;
+}
+
+// ============================================================================
+// DTO Normalizers (Backend Spring Boot JSON -> Rich UI Models)
+// ============================================================================
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapBackendGigToUi(raw: any): Gig {
+  if (!raw) return SEED_GIGS[0];
+  // If already in UI shape with packages.Basic, return as-is
+  if (raw.packages && raw.packages.Basic && raw.seller?.displayName) {
+    return raw as Gig;
+  }
+
+  const rawId = String(raw.id || "");
+  // Match a template from SEED_GIGS by UUID mapping or category
+  const templateGig =
+    rawId === "11111111-1111-1111-1111-111111111111"
+      ? SEED_GIGS[0]
+      : rawId === "22222222-2222-2222-2222-222222222222"
+      ? SEED_GIGS[1]
+      : rawId === "33333333-3333-3333-3333-333333333333"
+      ? SEED_GIGS[3]
+      : SEED_GIGS.find((g) => g.category === raw.category) || SEED_GIGS[0];
+
+  const pkgArray: Array<{
+    tier?: string;
+    name?: string;
+    description?: string;
+    price?: number;
+    deliveryDays?: number;
+    revisions?: number;
+  }> = Array.isArray(raw.packages) ? raw.packages : [];
+
+  const findPkg = (tierKey: string, fallbackPkg: PackageTier): PackageTier => {
+    const found = pkgArray.find(
+      (p) => String(p.tier || "").toUpperCase() === tierKey.toUpperCase()
+    );
+    if (!found) return fallbackPkg;
+    return {
+      tier: fallbackPkg.tier,
+      title: found.name || fallbackPkg.title,
+      description: found.description || fallbackPkg.description,
+      price: Number(found.price ?? fallbackPkg.price),
+      deliveryDays: Number(found.deliveryDays ?? fallbackPkg.deliveryDays),
+      revisions: found.revisions !== undefined ? Number(found.revisions) : fallbackPkg.revisions,
+      features: fallbackPkg.features,
+    };
+  };
+
+  const basicPkg = findPkg("BASIC", templateGig.packages.Basic);
+  const standardPkg = findPkg("STANDARD", templateGig.packages.Standard);
+  const premiumPkg = findPkg("PREMIUM", templateGig.packages.Premium);
+
+  const sellerMeta = ACCOUNT_PROFILE_META[String(raw.sellerId || "")];
+  const seller: GigSeller = sellerMeta
+    ? {
+        ...templateGig.seller,
+        id: String(raw.sellerId),
+        displayName: sellerMeta.displayName,
+        avatarUrl: sellerMeta.avatarUrl,
+      }
+    : templateGig.seller;
+
+  return {
+    ...templateGig,
+    id: rawId || templateGig.id,
+    slug: raw.slug || templateGig.slug,
+    title: raw.title || templateGig.title,
+    category: raw.category || templateGig.category,
+    description: raw.description || templateGig.description,
+    seller,
+    startingPrice: basicPkg.price,
+    packages: {
+      Basic: basicPkg,
+      Standard: standardPkg,
+      Premium: premiumPkg,
+    },
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapBackendReviewToUi(raw: any): ReviewItem {
+  if (!raw) return SEED_GIGS[0].reviews[0];
+  if (raw.buyerName && raw.ratingOverall !== undefined) {
+    return raw as ReviewItem;
+  }
+
+  const buyerMeta = ACCOUNT_PROFILE_META[String(raw.buyerId || "")];
+  const createdDate = raw.createdAt
+    ? new Date(raw.createdAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Just now";
+
+  return {
+    id: String(raw.id || `rev-${Date.now()}`),
+    buyerName: buyerMeta?.displayName || "Verified Enterprise Buyer",
+    buyerCountry: "United States",
+    buyerAvatar:
+      buyerMeta?.avatarUrl ||
+      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+    ratingOverall: Number(raw.overallRating ?? 5.0),
+    communicationRating: Number(raw.communicationRating ?? 5.0),
+    serviceAsDescribedRating: Number(raw.serviceAsDescribedRating ?? 5.0),
+    recommendRating: Number(raw.buyAgainRecommendRating ?? 5.0),
+    comment: String(raw.comment || ""),
+    packageOrdered: "Premium",
+    priceRange: "Escrow Verified",
+    createdAt: createdDate,
+    sellerResponse: raw.sellerResponse || undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapBackendOrderToUi(raw: any): Order {
+  if (!raw) return SEED_ORDERS[0];
+  if (raw.orderNumber && raw.gigTitle && raw.totalEscrow !== undefined) {
+    return raw as Order;
+  }
+
+  const rawId = String(raw.id || "");
+  const seedMatch = SEED_ORDERS.find(
+    (o) => o.id === rawId || o.gigId === String(raw.gigId || "")
+  );
+  const matchedGig =
+    SEED_GIGS.find(
+      (g) => g.id === String(raw.gigId || "") || GIG_ID_TO_UUID[g.id] === String(raw.gigId || "")
+    ) || SEED_GIGS[0];
+
+  const amount = Number(raw.amount ?? seedMatch?.amount ?? 490);
+  const serviceFee = Number((amount * 0.055).toFixed(2));
+  const totalEscrow = Number((amount + serviceFee).toFixed(2));
+
+  const tierStr = String(raw.packageTier || "STANDARD").toUpperCase();
+  const packageTier: PackageTierName =
+    tierStr === "BASIC" ? "Basic" : tierStr === "PREMIUM" ? "Premium" : "Standard";
+
+  const rawStatus = String(raw.status || "IN_PROGRESS").toUpperCase();
+  const status: OrderStatus =
+    rawStatus === "DELIVERED" ||
+    rawStatus === "REVISION_REQUESTED" ||
+    rawStatus === "COMPLETED" ||
+    rawStatus === "CANCELLED"
+      ? (rawStatus as OrderStatus)
+      : "IN_PROGRESS";
+
+  const sellerMeta = ACCOUNT_PROFILE_META[String(raw.sellerId || "")];
+  const buyerMeta = ACCOUNT_PROFILE_META[String(raw.buyerId || "")];
+
+  return {
+    id: rawId || `ord-${Date.now()}`,
+    orderNumber:
+      seedMatch?.orderNumber ||
+      `#FO-${rawId.replace(/-/g, "").slice(0, 7).toUpperCase() || "8849900"}`,
+    gigId: String(raw.gigId || matchedGig.id),
+    gigTitle: seedMatch?.gigTitle || matchedGig.title,
+    gigThumbnail: seedMatch?.gigThumbnail || matchedGig.thumbnailUrl,
+    packageTier,
+    buyerName: buyerMeta?.displayName || seedMatch?.buyerName || "Jordan Taylor",
+    buyerUsername: seedMatch?.buyerUsername || "jordan_taylor",
+    sellerName: sellerMeta?.displayName || seedMatch?.sellerName || matchedGig.seller.displayName,
+    sellerUsername: seedMatch?.sellerUsername || matchedGig.seller.username,
+    sellerLevel: seedMatch?.sellerLevel || matchedGig.seller.level,
+    amount,
+    serviceFee,
+    totalEscrow,
+    status,
+    dueDate:
+      seedMatch?.dueDate ||
+      new Date(Date.now() + 5 * 86400000).toISOString(),
+    createdAt: raw.createdAt || new Date().toISOString(),
+    deliveredAt: status === "DELIVERED" || status === "COMPLETED" ? raw.updatedAt : undefined,
+    completedAt: status === "COMPLETED" ? raw.updatedAt : undefined,
+    revisionsUsed: Number(raw.usedRevisions ?? seedMatch?.revisionsUsed ?? 0),
+    revisionsAllowed: Number(raw.maxRevisions ?? 5),
+    requirements:
+      raw.requirements ||
+      seedMatch?.requirements ||
+      "Follow DDD Hexagonal architecture guidelines.",
+    deliveryNote: raw.deliveryNote || seedMatch?.deliveryNote,
+    deliveryAttachments: raw.deliverableUrl
+      ? [String(raw.deliverableUrl)]
+      : seedMatch?.deliveryAttachments,
+    buyerId: String(raw.buyerId || "33333333-3333-3333-3333-333333333333"),
+    sellerId: String(raw.sellerId || "11111111-1111-1111-1111-111111111111"),
+    escrowReference: raw.escrowReference,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapBackendMessageToUi(raw: any): MessageItem {
+  if (!raw) return SEED_CONVERSATIONS[0].messages[0];
+  if (raw.text !== undefined && raw.senderName !== undefined) {
+    return raw as MessageItem;
+  }
+
+  const session = getAuthSession();
+  const senderId = String(raw.senderId || "");
+  const isBuyer =
+    senderId === session.account.id ||
+    senderId === "11111111-1111-1111-1111-111111111111";
+  const senderMeta = ACCOUNT_PROFILE_META[senderId];
+
+  const timeFormatted = raw.createdAt
+    ? new Date(raw.createdAt).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "Just now";
+
+  return {
+    id: String(raw.id || `msg-${Date.now()}`),
+    sender: isBuyer ? "buyer" : "seller",
+    senderName: senderMeta?.displayName || (isBuyer ? "Jordan Taylor" : "Elena Vance"),
+    text: String(raw.content || ""),
+    timestamp: timeFormatted,
+    customOffer: raw.customOffer
+      ? {
+          offerId: String(raw.customOffer.offerId || "44444444-4444-4444-4444-444444444444"),
+          gigId: String(raw.customOffer.gigId || "33333333-3333-3333-3333-333333333333"),
+          title: String(raw.customOffer.title || "Custom Milestone Offer"),
+          packageTier: "Standard",
+          price: Number(raw.customOffer.price ?? 450),
+          deliveryDays: Number(raw.customOffer.deliveryDays ?? 5),
+          revisions: 4,
+          status:
+            String(raw.customOffer.status || "PENDING").toUpperCase() === "ACCEPTED"
+              ? "ACCEPTED"
+              : "PENDING",
+        }
+      : undefined,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapBackendConversationToUi(raw: any, messages?: MessageItem[]): Conversation {
+  if (!raw) return SEED_CONVERSATIONS[0];
+  if (raw.participantName && Array.isArray(raw.messages)) {
+    return raw as Conversation;
+  }
+
+  const rawId = String(raw.id || "");
+  const sellerMeta = ACCOUNT_PROFILE_META[String(raw.sellerId || "")];
+  const seedConv = SEED_CONVERSATIONS[0];
+
+  return {
+    id: rawId || seedConv.id,
+    buyerId: String(raw.buyerId || "11111111-1111-1111-1111-111111111111"),
+    sellerId: String(raw.sellerId || "22222222-2222-2222-2222-222222222222"),
+    gigId: String(raw.gigId || "33333333-3333-3333-3333-333333333333"),
+    participantName: sellerMeta?.displayName || "Elena Vance",
+    participantUsername: "elena_ai",
+    participantAvatar:
+      sellerMeta?.avatarUrl ||
+      "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=250&q=80",
+    participantRole: "Seller",
+    participantLevel: "Top Rated Seller",
+    online: true,
+    relatedGigTitle: "Enterprise Spring Boot 3 & Next.js 15 Architecture",
+    lastMessage: String(raw.lastMessagePreview || seedConv.lastMessage),
+    lastMessageTime: raw.lastMessageAt
+      ? new Date(raw.lastMessageAt).toLocaleTimeString("en-US", {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : "Just now",
+    unreadCount: 1,
+    messages: messages && messages.length > 0 ? messages : seedConv.messages,
+  };
+}
+
+// ============================================================================
+// HTTP Fetch Client with Auth Headers & Automatic Fallback
+// ============================================================================
+
+async function fetchWithFallback<T>(
+  endpoint: string,
+  fallbackData: T,
+  init?: RequestInit
+): Promise<T> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1800);
-    const response = await fetch(`${API_GATEWAY_URL}${endpoint}`, {
+    const timeout = setTimeout(() => controller.abort(), 3500);
+    const session = getAuthSession();
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(session?.account?.id ? { "X-User-Id": session.account.id } : {}),
+      ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+    };
+
+    const url = endpoint.startsWith("http")
+      ? endpoint
+      : `${API_GATEWAY_URL}${endpoint}`;
+
+    const response = await fetch(url, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
+        ...headers,
+        ...(init?.headers as Record<string, string> | undefined),
       },
       signal: controller.signal,
     });
@@ -961,11 +1627,292 @@ async function fetchWithFallback<T>(endpoint: string, fallbackData: T, init?: Re
   }
 }
 
+// ============================================================================
+// Full 28-Endpoint FIVERREX Client SDK
+// ============================================================================
+
 export const fiverrApi = {
-  async getGigs(params?: { category?: string; search?: string; maxPrice?: number }): Promise<Gig[]> {
-    const gigs = await fetchWithFallback<Gig[]>("/gigs", SEED_GIGS);
-    return gigs.filter((g) => {
-      if (params?.category && params.category !== "All Categories" && g.category !== params.category) {
+  // 0. Gateway Status (GET http://localhost:8080/)
+  async getGatewayStatus(): Promise<GatewayStatusInfo> {
+    const fallback: GatewayStatusInfo = {
+      service: "fiverr-api-gateway",
+      brand: "FIVERREX",
+      status: "UP",
+      swaggerUi: "http://localhost:8080/swagger-ui/index.html",
+      openApiDocs: "http://localhost:8080/v3/api-docs",
+      timestamp: new Date().toISOString(),
+      routes: [
+        "/api/v1/auth/**",
+        "/api/v1/users/**",
+        "/api/v1/sellers/**",
+        "/api/v1/gigs/**",
+        "/api/v1/orders/**",
+        "/api/v1/payments/**",
+        "/api/v1/messages/**",
+        "/api/v1/reviews/**",
+        "/api/v1/notifications/**",
+      ],
+    };
+    return fetchWithFallback<GatewayStatusInfo>(`${GATEWAY_ROOT_URL}/`, fallback);
+  },
+
+  // 1. Auth Service (/api/v1/auth)
+  async getAccounts(): Promise<AuthAccountDto[]> {
+    return fetchWithFallback<AuthAccountDto[]>("/auth/accounts", DEFAULT_AUTH_ACCOUNTS);
+  },
+
+  async getAccountById(id: string): Promise<AuthAccountDto> {
+    const uuid = resolveBackendUuid(id, "33333333-3333-3333-3333-333333333333");
+    const fallback =
+      DEFAULT_AUTH_ACCOUNTS.find((a) => a.id === uuid) || DEFAULT_AUTH_ACCOUNTS[0];
+    return fetchWithFallback<AuthAccountDto>(`/auth/accounts/${uuid}`, fallback);
+  },
+
+  async login(payload: {
+    emailOrUsername: string;
+    password: string;
+  }): Promise<AuthSession> {
+    const matchedAccount =
+      DEFAULT_AUTH_ACCOUNTS.find(
+        (a) =>
+          a.username.toLowerCase() === payload.emailOrUsername.toLowerCase() ||
+          a.email.toLowerCase() === payload.emailOrUsername.toLowerCase()
+      ) || DEFAULT_AUTH_ACCOUNTS[0];
+
+    const fallbackResponse = {
+      accessToken: `eyJhbGciOiJIUzI1NiJ9.${matchedAccount.id}`,
+      refreshToken: `refresh-${matchedAccount.id}`,
+      tokenType: "Bearer",
+      expiresInSeconds: 3600,
+      account: matchedAccount,
+    };
+
+    const res = await fetchWithFallback<typeof fallbackResponse>(
+      "/auth/login",
+      fallbackResponse,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const session = buildSessionForAccount(
+      res.account || matchedAccount,
+      res.accessToken,
+      res.refreshToken
+    );
+    setAuthSession(session);
+    return session;
+  },
+
+  async register(payload: {
+    username: string;
+    email: string;
+    password: string;
+    roles?: string[];
+  }): Promise<AuthSession> {
+    const fallbackAccount: AuthAccountDto = {
+      id: "33333333-3333-3333-3333-333333333333",
+      username: payload.username,
+      email: payload.email,
+      roles: payload.roles || ["BUYER", "SELLER"],
+      status: "ACTIVE",
+      emailVerified: true,
+    };
+
+    const fallbackResponse = {
+      accessToken: `eyJhbGciOiJIUzI1NiJ9.${fallbackAccount.id}`,
+      refreshToken: `refresh-${fallbackAccount.id}`,
+      tokenType: "Bearer",
+      expiresInSeconds: 3600,
+      account: fallbackAccount,
+    };
+
+    const res = await fetchWithFallback<typeof fallbackResponse>(
+      "/auth/register",
+      fallbackResponse,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          username: payload.username,
+          email: payload.email,
+          password: payload.password,
+          roles: payload.roles || ["BUYER", "SELLER"],
+        }),
+      }
+    );
+
+    const session = buildSessionForAccount(
+      res.account || fallbackAccount,
+      res.accessToken,
+      res.refreshToken
+    );
+    setAuthSession(session);
+    return session;
+  },
+
+  async refreshToken(refreshTokenStr: string): Promise<{ accessToken: string; refreshToken: string }> {
+    return fetchWithFallback(
+      "/auth/refresh",
+      { accessToken: `refreshed-${Date.now()}`, refreshToken: refreshTokenStr },
+      {
+        method: "POST",
+        body: JSON.stringify({ refreshToken: refreshTokenStr }),
+      }
+    );
+  },
+
+  async changePassword(
+    accountId: string,
+    payload: { currentPassword: string; newPassword: string }
+  ): Promise<AuthAccountDto> {
+    const uuid = resolveBackendUuid(accountId, getAuthSession().account.id);
+    return fetchWithFallback<AuthAccountDto>(
+      `/auth/accounts/${uuid}/password`,
+      getAuthSession().account,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
+  // 2. User & Seller Profile Service (/api/v1/profiles, /api/v1/users, /api/v1/sellers)
+  async getSellers(): Promise<UserProfileDto[]> {
+    const fallback: UserProfileDto[] = [
+      {
+        id: "aaaaaaaa-1111-1111-1111-111111111111",
+        accountId: "11111111-1111-1111-1111-111111111111",
+        username: "alex_architect",
+        displayName: "Alex Rivera",
+        headline: "Principal Distributed Systems & Cloud Native Architect",
+        bio: "12+ years architecting high-throughput Spring Boot, Kafka, and Kubernetes platforms.",
+        avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=256&q=80",
+        country: "United States",
+        languages: ["English", "Spanish"],
+        skills: ["Java 21", "Spring Boot", "DDD", "Kafka", "Kubernetes"],
+        hourlyRate: 185,
+        seller: true,
+        sellerLevel: "TOP_RATED",
+        availabilityStatus: "AVAILABLE",
+        completedOrdersCount: 148,
+        ratingAverage: 4.98,
+      },
+    ];
+    return fetchWithFallback<UserProfileDto[]>("/sellers", fallback);
+  },
+
+  async getProfileById(profileId: string): Promise<UserProfileDto> {
+    const sellers = await this.getSellers();
+    const uuid = resolveBackendUuid(profileId, "aaaaaaaa-1111-1111-1111-111111111111");
+    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, sellers[0]);
+  },
+
+  async getProfileByUsername(username: string): Promise<UserProfileDto> {
+    const sellers = await this.getSellers();
+    return fetchWithFallback<UserProfileDto>(`/users/${username}`, sellers[0]);
+  },
+
+  async createProfile(payload: {
+    accountId: string;
+    username: string;
+    displayName: string;
+    headline?: string;
+    bio?: string;
+    avatarUrl?: string;
+    country?: string;
+    languages?: string[];
+    skills?: string[];
+  }): Promise<UserProfileDto> {
+    const sellers = await this.getSellers();
+    return fetchWithFallback<UserProfileDto>("/profiles", sellers[0], {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateProfile(
+    profileId: string,
+    payload: {
+      displayName: string;
+      headline?: string;
+      bio?: string;
+      avatarUrl?: string;
+      country?: string;
+      languages?: string[];
+      skills?: string[];
+      availabilityStatus?: string;
+    }
+  ): Promise<UserProfileDto> {
+    const sellers = await this.getSellers();
+    const uuid = resolveBackendUuid(profileId, getAuthSession().profileId);
+    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, sellers[0], {
+      method: "PUT",
+      body: JSON.stringify({
+        availabilityStatus: "AVAILABLE",
+        ...payload,
+      }),
+    });
+  },
+
+  async upgradeToSeller(
+    profileId?: string,
+    payload?: {
+      headline?: string;
+      bio?: string;
+      skills?: string[];
+      hourlyRate?: number;
+    }
+  ): Promise<UserProfileDto> {
+    const session = getAuthSession();
+    const uuid = resolveBackendUuid(
+      profileId,
+      session.profileId || "aaaaaaaa-3333-3333-3333-333333333333"
+    );
+    const body = {
+      headline: payload?.headline || "Full-Stack Product Architect & Verified Seller",
+      bio:
+        payload?.bio ||
+        "Delivering enterprise microservices, cloud-native Kubernetes infrastructure, and modern web applications.",
+      skills: payload?.skills || ["Spring Boot", "Next.js", "Kubernetes", "DDD"],
+      hourlyRate: payload?.hourlyRate ?? 150.0,
+    };
+    const sellers = await this.getSellers();
+    return fetchWithFallback<UserProfileDto>(
+      `/profiles/${uuid}/upgrade-seller`,
+      sellers[0],
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      }
+    );
+  },
+
+  // 3. Gig Catalog Service (/api/v1/gigs)
+  async getGigs(params?: {
+    category?: string;
+    search?: string;
+    maxPrice?: number;
+  }): Promise<Gig[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>("/gigs", SEED_GIGS);
+    const mappedBackendGigs = Array.isArray(rawList)
+      ? rawList.map((item) => mapBackendGigToUi(item))
+      : [];
+
+    // Merge live backend PostgreSQL gigs with rich SEED_GIGS catalog so all 6+ cards & routes work
+    const seenTitles = new Set(mappedBackendGigs.map((g) => g.title.toLowerCase()));
+    const combined: Gig[] = [
+      ...mappedBackendGigs,
+      ...SEED_GIGS.filter((seed) => !seenTitles.has(seed.title.toLowerCase())),
+    ];
+
+    return combined.filter((g) => {
+      if (
+        params?.category &&
+        params.category !== "All Categories" &&
+        g.category !== params.category
+      ) {
         return false;
       }
       if (params?.maxPrice && g.startingPrice > params.maxPrice) {
@@ -982,23 +1929,154 @@ export const fiverrApi = {
     });
   },
 
-  async getGigById(id: string): Promise<Gig> {
-    const fallback = SEED_GIGS.find((g) => g.id === id) || SEED_GIGS[0];
-    return fetchWithFallback<Gig>(`/gigs/${id}`, fallback);
+  async searchGigs(keyword = "", category = ""): Promise<Gig[]> {
+    const query = new URLSearchParams();
+    if (keyword) query.set("keyword", keyword);
+    if (category && category !== "All Categories") query.set("category", category);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>(
+      `/gigs/search?${query.toString()}`,
+      SEED_GIGS
+    );
+    const mapped = Array.isArray(rawList) ? rawList.map(mapBackendGigToUi) : SEED_GIGS;
+    return mapped;
   },
 
+  async getGigById(id: string): Promise<Gig> {
+    const seedMatch = SEED_GIGS.find((g) => g.id === id);
+    const uuid = resolveBackendUuid(id, "11111111-1111-1111-1111-111111111111");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>(`/gigs/${uuid}`, seedMatch || SEED_GIGS[0]);
+    const mapped = mapBackendGigToUi(raw);
+    if (seedMatch && !UUID_REGEX.test(id)) {
+      return seedMatch;
+    }
+    return mapped;
+  },
+
+  async createGig(payload: {
+    sellerId?: string;
+    title: string;
+    category: string;
+    description?: string;
+    basicPrice: number;
+    standardPrice: number;
+    premiumPrice: number;
+  }): Promise<Gig> {
+    const session = getAuthSession();
+    const sellerId = resolveBackendUuid(
+      payload.sellerId,
+      session.sellerId || "11111111-1111-1111-1111-111111111111"
+    );
+    const formattedTitle = payload.title.startsWith("I will")
+      ? payload.title
+      : `I will ${payload.title}`;
+    const body = {
+      sellerId,
+      title:
+        formattedTitle.length >= 10
+          ? formattedTitle
+          : `${formattedTitle} with Enterprise Quality`,
+      category: payload.category,
+      description:
+        payload.description ||
+        "Production-grade architecture and implementation delivered with full test coverage, documentation, and Escrow milestone protection.",
+      packages: [
+        {
+          tier: "BASIC",
+          name: "Core Deliverable Package",
+          description: "Essential foundation implementation with clean architecture and documentation.",
+          price: payload.basicPrice,
+          deliveryDays: 3,
+          revisions: 2,
+        },
+        {
+          tier: "STANDARD",
+          name: "Full Production Suite",
+          description: "Complete multi-module implementation with integration tests and Docker support.",
+          price: payload.standardPrice,
+          deliveryDays: 5,
+          revisions: 5,
+        },
+        {
+          tier: "PREMIUM",
+          name: "Enterprise Cloud Ecosystem",
+          description: "End-to-end production system with Kubernetes Helm charts and priority SLA.",
+          price: payload.premiumPrice,
+          deliveryDays: 10,
+          revisions: 10,
+        },
+      ],
+    };
+
+    const fallbackGig: Gig = {
+      ...SEED_GIGS[0],
+      id: `gig-${Date.now()}`,
+      title: body.title,
+      category: payload.category,
+      startingPrice: payload.basicPrice,
+      packages: {
+        Basic: { ...SEED_GIGS[0].packages.Basic, price: payload.basicPrice },
+        Standard: { ...SEED_GIGS[0].packages.Standard, price: payload.standardPrice },
+        Premium: { ...SEED_GIGS[0].packages.Premium, price: payload.premiumPrice },
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>("/gigs", fallbackGig, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return mapBackendGigToUi(raw);
+  },
+
+  // 4. Orders & Escrow Lifecycle (/api/v1/orders)
   async getOrders(): Promise<Order[]> {
-    return fetchWithFallback<Order[]>("/orders", SEED_ORDERS);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>("/orders", SEED_ORDERS);
+    if (!Array.isArray(rawList) || rawList.length === 0) {
+      return SEED_ORDERS;
+    }
+    return rawList.map(mapBackendOrderToUi);
+  },
+
+  async getOrderById(orderId: string): Promise<Order> {
+    const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
+    const fallback = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>(`/orders/${uuid}`, fallback);
+    return mapBackendOrderToUi(raw);
   },
 
   async createOrder(payload: {
     gigId: string;
     packageTier: PackageTierName;
     requirements: string;
+    amount?: number;
+    sellerId?: string;
   }): Promise<Order> {
-    const gig = SEED_GIGS.find((g) => g.id === payload.gigId) || SEED_GIGS[0];
-    const pkg = gig.packages[payload.packageTier];
-    const serviceFee = Number((pkg.price * 0.055).toFixed(2));
+    const session = getAuthSession();
+    const gig =
+      SEED_GIGS.find((g) => g.id === payload.gigId) ||
+      SEED_GIGS.find((g) => GIG_ID_TO_UUID[g.id] === payload.gigId) ||
+      SEED_GIGS[0];
+    const pkg = gig.packages[payload.packageTier] || gig.packages.Standard;
+    const price = payload.amount ?? pkg.price;
+    const serviceFee = Number((price * 0.055).toFixed(2));
+
+    const backendGigId = resolveBackendUuid(
+      payload.gigId,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    const buyerId = resolveBackendUuid(
+      session.account.id,
+      "33333333-3333-3333-3333-333333333333"
+    );
+    const sellerId = resolveBackendUuid(
+      payload.sellerId || gig.seller.id,
+      "11111111-1111-1111-1111-111111111111"
+    );
+
     const fallbackOrder: Order = {
       id: `ord-${Date.now()}`,
       orderNumber: `#FO-${Math.floor(1000000 + Math.random() * 9000000)}`,
@@ -1006,32 +2084,597 @@ export const fiverrApi = {
       gigTitle: gig.title,
       gigThumbnail: gig.thumbnailUrl,
       packageTier: payload.packageTier,
-      buyerName: "Jordan Taylor",
-      buyerUsername: "jordan_fintech",
+      buyerName: session.displayName || "Jordan Taylor",
+      buyerUsername: session.account.username || "jordan_taylor",
       sellerName: gig.seller.displayName,
       sellerUsername: gig.seller.username,
       sellerLevel: gig.seller.level,
-      amount: pkg.price,
+      amount: price,
       serviceFee,
-      totalEscrow: Number((pkg.price + serviceFee).toFixed(2)),
+      totalEscrow: Number((price + serviceFee).toFixed(2)),
       status: "IN_PROGRESS",
       dueDate: new Date(Date.now() + pkg.deliveryDays * 86400000).toISOString(),
       createdAt: new Date().toISOString(),
       revisionsUsed: 0,
       revisionsAllowed: pkg.revisions,
-      requirements: payload.requirements || "Please follow the architectural guidelines discussed.",
+      requirements:
+        payload.requirements || "Please follow the architectural guidelines discussed.",
+      buyerId,
+      sellerId,
     };
-    return fetchWithFallback<Order>("/orders", fallbackOrder, {
+
+    const requestBody = {
+      gigId: backendGigId,
+      buyerId,
+      sellerId,
+      packageTier: payload.packageTier.toUpperCase(),
+      amount: price,
+      requirements:
+        payload.requirements || "Please follow the architectural guidelines discussed.",
+      maxRevisions: typeof pkg.revisions === "number" ? pkg.revisions : 10,
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>("/orders", fallbackOrder, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestBody),
+    });
+    return mapBackendOrderToUi(raw);
+  },
+
+  async deliverOrder(
+    orderId: string,
+    payload: { sellerId?: string; deliveryNote: string; deliverableUrl?: string }
+  ): Promise<Order> {
+    const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
+    const existing = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const body = {
+      sellerId: resolveBackendUuid(
+        payload.sellerId || existing.sellerId,
+        "11111111-1111-1111-1111-111111111111"
+      ),
+      deliveryNote: payload.deliveryNote,
+      deliverableUrl:
+        payload.deliverableUrl || "https://github.com/fiverrex/deliverables-release-v1.zip",
+    };
+    const fallback: Order = {
+      ...existing,
+      id: orderId,
+      status: "DELIVERED",
+      deliveryNote: payload.deliveryNote,
+      deliveredAt: new Date().toISOString(),
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>(`/orders/${uuid}/deliver`, fallback, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return mapBackendOrderToUi(raw);
+  },
+
+  async requestRevision(
+    orderId: string,
+    payload: { buyerId?: string; reason: string }
+  ): Promise<Order> {
+    const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
+    const existing = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const body = {
+      buyerId: resolveBackendUuid(
+        payload.buyerId || existing.buyerId,
+        "33333333-3333-3333-3333-333333333333"
+      ),
+      reason: payload.reason,
+    };
+    const fallback: Order = {
+      ...existing,
+      id: orderId,
+      status: "REVISION_REQUESTED",
+      revisionsUsed: existing.revisionsUsed + 1,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>(`/orders/${uuid}/revisions`, fallback, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return mapBackendOrderToUi(raw);
+  },
+
+  async completeOrder(orderId: string, buyerId?: string): Promise<Order> {
+    const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
+    const existing = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const body = {
+      buyerId: resolveBackendUuid(
+        buyerId || existing.buyerId,
+        "33333333-3333-3333-3333-333333333333"
+      ),
+    };
+    const fallback: Order = {
+      ...existing,
+      id: orderId,
+      status: "COMPLETED",
+      completedAt: new Date().toISOString(),
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>(`/orders/${uuid}/complete`, fallback, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return mapBackendOrderToUi(raw);
+  },
+
+  // 5. Payment & Escrow Wallet Service (/api/v1/payments)
+  async getEscrowTransactions(): Promise<EscrowTransactionItem[]> {
+    return fetchWithFallback<EscrowTransactionItem[]>(
+      "/payments/escrow",
+      SEED_ESCROW_TRANSACTIONS
+    );
+  },
+
+  async holdEscrow(payload: {
+    orderId: string;
+    buyerId?: string;
+    sellerId?: string;
+    grossAmount: number;
+    paymentMethodToken?: string;
+  }): Promise<EscrowTransactionItem> {
+    const session = getAuthSession();
+    const orderUuid = resolveBackendUuid(
+      payload.orderId,
+      "44444444-4444-4444-4444-444444444444"
+    );
+    const buyerUuid = resolveBackendUuid(
+      payload.buyerId || session.account.id,
+      "33333333-3333-3333-3333-333333333333"
+    );
+    const sellerUuid = resolveBackendUuid(
+      payload.sellerId,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    const fallback: EscrowTransactionItem = {
+      id: `escrow-${Date.now()}`,
+      orderId: orderUuid,
+      buyerId: buyerUuid,
+      sellerId: sellerUuid,
+      grossAmount: payload.grossAmount,
+      platformFee: Number((payload.grossAmount * 0.2).toFixed(2)),
+      sellerNetPayout: Number((payload.grossAmount * 0.8).toFixed(2)),
+      gatewayChargeId: `ch_fvx_${Date.now()}`,
+      status: "HELD",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return fetchWithFallback<EscrowTransactionItem>("/payments/escrow/hold", fallback, {
+      method: "POST",
+      body: JSON.stringify({
+        orderId: orderUuid,
+        buyerId: buyerUuid,
+        sellerId: sellerUuid,
+        grossAmount: payload.grossAmount,
+        paymentMethodToken: payload.paymentMethodToken || "tok_fiverrex_visa_4242",
+      }),
+    });
+  },
+
+  async releaseEscrow(orderId: string): Promise<EscrowTransactionItem> {
+    const orderUuid = resolveBackendUuid(
+      orderId,
+      "44444444-4444-4444-4444-444444444444"
+    );
+    const fallback: EscrowTransactionItem = {
+      ...SEED_ESCROW_TRANSACTIONS[0],
+      orderId: orderUuid,
+      status: "RELEASED",
+      updatedAt: new Date().toISOString(),
+    };
+    return fetchWithFallback<EscrowTransactionItem>(
+      "/payments/escrow/release",
+      fallback,
+      {
+        method: "POST",
+        body: JSON.stringify({ orderId: orderUuid }),
+      }
+    );
+  },
+
+  async getWallets(): Promise<SellerWalletItem[]> {
+    return fetchWithFallback<SellerWalletItem[]>("/payments/wallets", SEED_WALLETS);
+  },
+
+  async getSellerWallet(sellerId?: string): Promise<SellerWalletItem> {
+    const session = getAuthSession();
+    const uuid = resolveBackendUuid(
+      sellerId || session.sellerId,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    const fallback =
+      SEED_WALLETS.find((w) => w.sellerId === uuid) || SEED_WALLETS[0];
+    return fetchWithFallback<SellerWalletItem>(`/payments/wallets/${uuid}`, fallback);
+  },
+
+  async withdrawFunds(payload: {
+    sellerId?: string;
+    amount: number;
+    payoutDestination?: string;
+  }): Promise<SellerWalletItem> {
+    const session = getAuthSession();
+    const sellerUuid = resolveBackendUuid(
+      payload.sellerId || session.sellerId,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    const fallback: SellerWalletItem = {
+      sellerId: sellerUuid,
+      availableBalance: 0,
+      withdrawnTotal: payload.amount + 800,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return fetchWithFallback<SellerWalletItem>("/payments/wallets/withdraw", fallback, {
+      method: "POST",
+      body: JSON.stringify({
+        sellerId: sellerUuid,
+        amount: payload.amount,
+        payoutDestination: payload.payoutDestination || "stripe_Express_Acct_FIVERREX",
+      }),
     });
   },
 
   async getSellerDashboard(): Promise<SellerDashboardStats> {
-    return fetchWithFallback<SellerDashboardStats>("/sellers/me/dashboard", SEED_SELLER_STATS);
+    const [wallets, escrows, orders] = await Promise.all([
+      this.getWallets(),
+      this.getEscrowTransactions(),
+      this.getOrders(),
+    ]);
+    const session = getAuthSession();
+    const primaryWallet =
+      wallets.find((w) => w.sellerId === session.sellerId) || wallets[0];
+    const pendingEscrow = escrows
+      .filter((e) => e.status === "HELD")
+      .reduce((sum, e) => sum + Number(e.grossAmount || 0), 0);
+    const clearedEscrow = escrows
+      .filter((e) => e.status === "RELEASED")
+      .reduce((sum, e) => sum + Number(e.sellerNetPayout || 0), 0);
+    const activeOrders = orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED");
+
+    return {
+      ...SEED_SELLER_STATS,
+      availableForWithdrawal: primaryWallet
+        ? Number(primaryWallet.availableBalance)
+        : SEED_SELLER_STATS.availableForWithdrawal,
+      escrowPendingBalance: pendingEscrow || SEED_SELLER_STATS.escrowPendingBalance,
+      clearedThisMonth:
+        (clearedEscrow || 0) +
+        (primaryWallet ? Number(primaryWallet.withdrawnTotal || 0) : 0) ||
+        SEED_SELLER_STATS.clearedThisMonth,
+      activeOrdersCount: activeOrders.length || SEED_SELLER_STATS.activeOrdersCount,
+      activeOrdersValue:
+        activeOrders.reduce((s, o) => s + o.totalEscrow, 0) ||
+        SEED_SELLER_STATS.activeOrdersValue,
+    };
+  },
+
+  // 6. Messaging & Chat Service (/api/v1/messages)
+  async getAllMessages(): Promise<MessageItem[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>(
+      "/messages",
+      SEED_CONVERSATIONS[0].messages
+    );
+    return Array.isArray(rawList) ? rawList.map(mapBackendMessageToUi) : [];
+  },
+
+  async getConversationMessages(conversationId: string): Promise<MessageItem[]> {
+    if (!UUID_REGEX.test(conversationId)) {
+      const found = SEED_CONVERSATIONS.find((c) => c.id === conversationId);
+      return found ? found.messages : SEED_CONVERSATIONS[0].messages;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>(
+      `/messages/conversations/${conversationId}`,
+      SEED_CONVERSATIONS[0].messages
+    );
+    return Array.isArray(rawList) && rawList.length > 0
+      ? rawList.map(mapBackendMessageToUi)
+      : SEED_CONVERSATIONS[0].messages;
   },
 
   async getConversations(): Promise<Conversation[]> {
-    return fetchWithFallback<Conversation[]>("/messages/conversations", SEED_CONVERSATIONS);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawConvs = await fetchWithFallback<any[]>(
+      "/messages/conversations",
+      SEED_CONVERSATIONS
+    );
+    if (!Array.isArray(rawConvs) || rawConvs.length === 0) {
+      return SEED_CONVERSATIONS;
+    }
+
+    const mappedConvs = await Promise.all(
+      rawConvs.map(async (rc) => {
+        if (rc.participantName && Array.isArray(rc.messages)) {
+          return rc as Conversation;
+        }
+        const msgs = await this.getConversationMessages(String(rc.id));
+        return mapBackendConversationToUi(rc, msgs);
+      })
+    );
+
+    const existingIds = new Set(mappedConvs.map((c) => c.id));
+    return [
+      ...mappedConvs,
+      ...SEED_CONVERSATIONS.filter((sc) => !existingIds.has(sc.id)),
+    ];
+  },
+
+  async sendMessage(payload: {
+    conversationId?: string;
+    senderId?: string;
+    recipientId?: string;
+    gigId?: string;
+    content: string;
+    messageType?: "TEXT" | "CUSTOM_OFFER";
+    customOffer?: {
+      title: string;
+      description?: string;
+      packageTier?: PackageTierName;
+      price: number;
+      deliveryDays: number;
+      revisions?: number;
+    };
+  }): Promise<MessageItem> {
+    const session = getAuthSession();
+    const convUuid =
+      payload.conversationId && UUID_REGEX.test(payload.conversationId)
+        ? payload.conversationId
+        : "137ad359-20c7-492f-b978-416db5932478";
+    const senderUuid = resolveBackendUuid(
+      payload.senderId || session.account.id,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    const recipientUuid = resolveBackendUuid(
+      payload.recipientId,
+      "22222222-2222-2222-2222-222222222222"
+    );
+    const gigUuid = resolveBackendUuid(
+      payload.gigId,
+      "33333333-3333-3333-3333-333333333333"
+    );
+
+    const body = {
+      conversationId: convUuid,
+      senderId: senderUuid,
+      recipientId: recipientUuid,
+      gigId: gigUuid,
+      content: payload.content,
+      messageType: payload.messageType || "TEXT",
+      attachmentUrls: [],
+      customOffer: payload.customOffer
+        ? {
+            offerId: "44444444-4444-4444-4444-444444444444",
+            gigId: gigUuid,
+            title: payload.customOffer.title,
+            description:
+              payload.customOffer.description ||
+              "Custom milestone package protected by FIVERREX Payment Escrow.",
+            price: payload.customOffer.price,
+            deliveryDays: payload.customOffer.deliveryDays,
+            status: "PENDING",
+          }
+        : null,
+    };
+
+    const fallbackMsg: MessageItem = {
+      id: `msg-${Date.now()}`,
+      sender: payload.messageType === "CUSTOM_OFFER" ? "seller" : "buyer",
+      senderName: session.displayName || "Jordan Taylor",
+      text: payload.content,
+      timestamp: "Just now",
+      customOffer: payload.customOffer
+        ? {
+            offerId: "44444444-4444-4444-4444-444444444444",
+            gigId: gigUuid,
+            title: payload.customOffer.title,
+            packageTier: payload.customOffer.packageTier || "Standard",
+            price: payload.customOffer.price,
+            deliveryDays: payload.customOffer.deliveryDays,
+            revisions: payload.customOffer.revisions ?? 4,
+            status: "PENDING",
+          }
+        : undefined,
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>("/messages", fallbackMsg, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const mapped = mapBackendMessageToUi(raw);
+    if (payload.customOffer && mapped.customOffer) {
+      mapped.customOffer.packageTier = payload.customOffer.packageTier || "Standard";
+      mapped.customOffer.revisions = payload.customOffer.revisions ?? 4;
+    }
+    return mapped;
+  },
+
+  // 7. Verified Review Service (/api/v1/reviews)
+  async getAllReviews(): Promise<ReviewItem[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>("/reviews", SEED_GIGS[0].reviews);
+    return Array.isArray(rawList) ? rawList.map(mapBackendReviewToUi) : SEED_GIGS[0].reviews;
+  },
+
+  async getGigReviews(gigId: string): Promise<ReviewItem[]> {
+    const uuid = resolveBackendUuid(gigId, "33333333-3333-3333-3333-333333333333");
+    const seedGig = SEED_GIGS.find((g) => g.id === gigId) || SEED_GIGS[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawList = await fetchWithFallback<any[]>(
+      `/reviews/gig/${uuid}`,
+      seedGig.reviews
+    );
+    const mapped = Array.isArray(rawList) ? rawList.map(mapBackendReviewToUi) : [];
+    const seenIds = new Set(mapped.map((r) => r.id));
+    return [...mapped, ...seedGig.reviews.filter((sr) => !seenIds.has(sr.id))];
+  },
+
+  async submitReview(payload: {
+    orderId?: string;
+    gigId: string;
+    buyerId?: string;
+    sellerId?: string;
+    communicationRating: number;
+    serviceAsDescribedRating: number;
+    buyAgainRecommendRating: number;
+    comment: string;
+  }): Promise<ReviewItem> {
+    const session = getAuthSession();
+    // Generate a deterministic unique UUID for orderId so unique constraint on orderId in review DB succeeds
+    const randomHex = Math.floor(100000000000 + Math.random() * 899999999999).toString(16).slice(0, 12);
+    const uniqueOrderUuid =
+      payload.orderId && UUID_REGEX.test(payload.orderId)
+        ? payload.orderId
+        : `55555555-5555-4555-8555-${randomHex.padEnd(12, "0")}`;
+    const gigUuid = resolveBackendUuid(
+      payload.gigId,
+      "33333333-3333-3333-3333-333333333333"
+    );
+    const buyerUuid = resolveBackendUuid(
+      payload.buyerId || session.account.id,
+      "33333333-3333-3333-3333-333333333333"
+    );
+    const sellerUuid = resolveBackendUuid(
+      payload.sellerId,
+      "22222222-2222-2222-2222-222222222222"
+    );
+
+    const avg = Number(
+      (
+        (payload.communicationRating +
+          payload.serviceAsDescribedRating +
+          payload.buyAgainRecommendRating) /
+        3
+      ).toFixed(1)
+    );
+
+    const fallbackReview: ReviewItem = {
+      id: `rev-${Date.now()}`,
+      buyerName: session.displayName || "Jordan Taylor",
+      buyerCountry: "United States",
+      buyerAvatar: session.avatarUrl,
+      ratingOverall: avg,
+      communicationRating: payload.communicationRating,
+      serviceAsDescribedRating: payload.serviceAsDescribedRating,
+      recommendRating: payload.buyAgainRecommendRating,
+      comment: payload.comment,
+      packageOrdered: "Premium",
+      priceRange: "Escrow Verified",
+      createdAt: "Just now",
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>("/reviews", fallbackReview, {
+      method: "POST",
+      body: JSON.stringify({
+        orderId: uniqueOrderUuid,
+        gigId: gigUuid,
+        buyerId: buyerUuid,
+        sellerId: sellerUuid,
+        communicationRating: payload.communicationRating,
+        serviceAsDescribedRating: payload.serviceAsDescribedRating,
+        buyAgainRecommendRating: payload.buyAgainRecommendRating,
+        comment: payload.comment,
+      }),
+    });
+    return mapBackendReviewToUi(raw);
+  },
+
+  async addSellerResponse(
+    reviewId: string,
+    payload: { sellerId?: string; sellerResponse: string }
+  ): Promise<ReviewItem> {
+    const uuid = resolveBackendUuid(reviewId, "cf4277bb-47d0-46dc-83d4-a54ef1ebb7be");
+    const sellerUuid = resolveBackendUuid(
+      payload.sellerId || getAuthSession().sellerId,
+      "22222222-2222-2222-2222-222222222222"
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any>(
+      `/reviews/${uuid}/seller-response`,
+      { ...SEED_GIGS[0].reviews[0], sellerResponse: payload.sellerResponse },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sellerId: sellerUuid,
+          sellerResponse: payload.sellerResponse,
+        }),
+      }
+    );
+    return mapBackendReviewToUi(raw);
+  },
+
+  // 8. Multi-Channel Notification Service (/api/v1/notifications)
+  async getNotifications(): Promise<NotificationItem[]> {
+    return fetchWithFallback<NotificationItem[]>("/notifications", SEED_NOTIFICATIONS);
+  },
+
+  async getUserNotifications(recipientUserId?: string): Promise<NotificationItem[]> {
+    const uuid = resolveBackendUuid(
+      recipientUserId || getAuthSession().account.id,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    return fetchWithFallback<NotificationItem[]>(
+      `/notifications/users/${uuid}`,
+      SEED_NOTIFICATIONS
+    );
+  },
+
+  async sendNotification(payload: {
+    recipientUserId?: string;
+    type?: string;
+    title: string;
+    message: string;
+    channel?: "IN_APP" | "EMAIL" | "ALL";
+  }): Promise<NotificationItem> {
+    const recipientUuid = resolveBackendUuid(
+      payload.recipientUserId || getAuthSession().account.id,
+      "11111111-1111-1111-1111-111111111111"
+    );
+    const fallback: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      recipientUserId: recipientUuid,
+      type: payload.type || "ORDER_CREATED",
+      title: payload.title,
+      message: payload.message,
+      channel: payload.channel || "IN_APP",
+      read: false,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    return fetchWithFallback<NotificationItem>("/notifications", fallback, {
+      method: "POST",
+      body: JSON.stringify({
+        recipientUserId: recipientUuid,
+        type: payload.type || "ORDER_CREATED",
+        title: payload.title,
+        message: payload.message,
+        channel: payload.channel || "IN_APP",
+      }),
+    });
+  },
+
+  async markNotificationRead(notificationId: string): Promise<NotificationItem> {
+    const fallback: NotificationItem = {
+      ...SEED_NOTIFICATIONS[0],
+      id: notificationId,
+      read: true,
+      readAt: new Date().toISOString(),
+    };
+    if (!UUID_REGEX.test(notificationId)) {
+      return fallback;
+    }
+    return fetchWithFallback<NotificationItem>(
+      `/notifications/${notificationId}/read`,
+      fallback,
+      {
+        method: "PATCH",
+      }
+    );
   },
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -15,15 +15,24 @@ import {
   ChevronRight,
   X,
   Lock,
+  Send,
 } from "lucide-react";
-import { SEED_GIGS, type PackageTierName, fiverrApi } from "@/lib/api";
+import {
+  SEED_GIGS,
+  type Gig,
+  type ReviewItem,
+  type PackageTierName,
+  fiverrApi,
+} from "@/lib/api";
 
 export default function GigDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const gigId = params?.id || "gig-101";
 
-  const gig = SEED_GIGS.find((g) => g.id === gigId) || SEED_GIGS[0];
+  const initialGig = SEED_GIGS.find((g) => g.id === gigId) || SEED_GIGS[0];
+  const [gig, setGig] = useState<Gig>(initialGig);
+  const [reviews, setReviews] = useState<ReviewItem[]>(initialGig.reviews);
 
   const [selectedTier, setSelectedTier] = useState<PackageTierName>("Standard");
   const [selectedImageIdx, setSelectedImageIdx] = useState<number>(0);
@@ -32,7 +41,31 @@ export default function GigDetailPage() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [orderSuccessNumber, setOrderSuccessNumber] = useState<string | null>(null);
 
-  const activePackage = gig.packages[selectedTier];
+  // Interactive 3-Criteria Review Form State
+  const [commRating, setCommRating] = useState<number>(5);
+  const [serviceRating, setServiceRating] = useState<number>(5);
+  const [recommendRating, setRecommendRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>("");
+  const [submittingReview, setSubmittingReview] = useState<boolean>(false);
+  const [reviewToast, setReviewToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadGigDetails() {
+      const [liveGig, liveReviews] = await Promise.all([
+        fiverrApi.getGigById(gigId),
+        fiverrApi.getGigReviews(gigId),
+      ]);
+      if (liveGig) {
+        setGig(liveGig);
+      }
+      if (liveReviews && liveReviews.length > 0) {
+        setReviews(liveReviews);
+      }
+    }
+    loadGigDetails();
+  }, [gigId]);
+
+  const activePackage = gig.packages[selectedTier] || gig.packages.Standard;
   const serviceFee = Number((activePackage.price * 0.055).toFixed(2));
   const totalEscrow = Number((activePackage.price + serviceFee).toFixed(2));
 
@@ -43,9 +76,45 @@ export default function GigDetailPage() {
       gigId: gig.id,
       packageTier: selectedTier,
       requirements,
+      amount: activePackage.price,
+      sellerId: gig.seller.id,
     });
+
+    await Promise.all([
+      fiverrApi.holdEscrow({
+        orderId: created.id,
+        sellerId: gig.seller.id,
+        grossAmount: activePackage.price,
+      }),
+      fiverrApi.sendNotification({
+        type: "ORDER_CREATED",
+        title: `New ${selectedTier} Order ${created.orderNumber}`,
+        message: `Escrow deposit of $${totalEscrow.toFixed(2)} locked for "${gig.title}".`,
+        channel: "IN_APP",
+      }),
+    ]);
+
     setSubmitting(false);
     setOrderSuccessNumber(created.orderNumber);
+    window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
+  }
+
+  async function handleSubmitReview(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reviewComment.trim()) return;
+    setSubmittingReview(true);
+    const createdRev = await fiverrApi.submitReview({
+      gigId: gig.id,
+      sellerId: gig.seller.id,
+      communicationRating: commRating,
+      serviceAsDescribedRating: serviceRating,
+      buyAgainRecommendRating: recommendRating,
+      comment: reviewComment.trim(),
+    });
+    setReviews((prev) => [createdRev, ...prev]);
+    setReviewComment("");
+    setSubmittingReview(false);
+    setReviewToast("Verified 3-criteria review published via POST /api/v1/reviews!");
   }
 
   return (
@@ -95,7 +164,7 @@ export default function GigDetailPage() {
               <div className="flex items-center gap-1 text-sm">
                 <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                 <span className="font-bold text-gray-900">{gig.rating.toFixed(1)}</span>
-                <span className="text-gray-500">({gig.reviewCount} reviews)</span>
+                <span className="text-gray-500">({gig.reviewCount + reviews.length} reviews)</span>
               </div>
 
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-[#1dbf73]">
@@ -224,7 +293,7 @@ export default function GigDetailPage() {
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 pb-4">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">
-                  Verified Buyer Reviews ({gig.reviewCount})
+                  Verified Buyer Reviews ({gig.reviewCount + reviews.length})
                 </h2>
                 <p className="text-xs text-gray-500">
                   3-Criteria Rating powered by `fiverr-review-service`
@@ -270,15 +339,100 @@ export default function GigDetailPage() {
               </div>
             </div>
 
+            {/* Interactive Write a Verified Review Form */}
+            <form
+              onSubmit={handleSubmitReview}
+              className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0a4226]">
+                  Write a Verified 3-Criteria Review (`POST /api/v1/reviews`)
+                </h3>
+                {reviewToast && (
+                  <span className="text-[11px] font-bold text-[#1dbf73]">{reviewToast}</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700">
+                    Communication (1-5)
+                  </label>
+                  <select
+                    value={commRating}
+                    onChange={(e) => setCommRating(Number(e.target.value))}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold"
+                  >
+                    {[5, 4, 3, 2, 1].map((r) => (
+                      <option key={r} value={r}>
+                        {r} Stars
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700">
+                    Service as Described (1-5)
+                  </label>
+                  <select
+                    value={serviceRating}
+                    onChange={(e) => setServiceRating(Number(e.target.value))}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold"
+                  >
+                    {[5, 4, 3, 2, 1].map((r) => (
+                      <option key={r} value={r}>
+                        {r} Stars
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700">
+                    Recommend / Buy Again (1-5)
+                  </label>
+                  <select
+                    value={recommendRating}
+                    onChange={(e) => setRecommendRating(Number(e.target.value))}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold"
+                  >
+                    {[5, 4, 3, 2, 1].map((r) => (
+                      <option key={r} value={r}>
+                        {r} Stars
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  required
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="Share your experience with this seller's architecture & delivery..."
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs focus:border-[#1dbf73] focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={submittingReview}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#1dbf73] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#19a463] disabled:opacity-50"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>{submittingReview ? "Posting..." : "Post Review"}</span>
+                </button>
+              </div>
+            </form>
+
             {/* Individual Reviews */}
             <div className="mt-6 space-y-5">
-              {gig.reviews.length === 0 ? (
+              {reviews.length === 0 ? (
                 <p className="text-xs text-gray-500">
                   All {gig.reviewCount} verified ratings average {gig.rating.toFixed(1)} stars across
                   completed escrow orders.
                 </p>
               ) : (
-                gig.reviews.map((rev) => (
+                reviews.map((rev) => (
                   <div key={rev.id} className="border-t border-gray-100 pt-5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
