@@ -1608,6 +1608,15 @@ async function fetchWithFallback<T>(
       ? endpoint
       : `${API_GATEWAY_URL}${endpoint}`;
 
+    if (
+      typeof window !== "undefined" &&
+      window.location.protocol === "https:" &&
+      url.startsWith("http://")
+    ) {
+      clearTimeout(timeout);
+      return fallbackData;
+    }
+
     const response = await fetch(url, {
       ...init,
       headers: {

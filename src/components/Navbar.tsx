@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
+  BookOpen,
   Briefcase,
   Check,
   KeyRound,
@@ -218,6 +219,18 @@ export function Navbar() {
               </Link>
             );
           })}
+          <a
+            href={
+              process.env.NEXT_PUBLIC_TECH_DOCS_URL ||
+              "https://fiverr-technical-doc.vercel.app"
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            className="relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          >
+            <BookOpen className="h-4 w-4 shrink-0 text-[#1dbf73]" />
+            <span className="hidden whitespace-nowrap lg:inline">Tech Docs</span>
+          </a>
         </nav>
 
         {/* Right Actions: Switch to Selling + Notification Bell + Account Switcher Pill */}
