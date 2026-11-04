@@ -1,0 +1,31 @@
+name: Fiverr Web Frontend CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript & Next.js Production Build
+        env:
+          NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:8080/api/v1
+        run: npm run build
+
+      - name: Build Docker Image
+        run: docker build -t ghcr.io/fiverr-club/fiverr-web:latest .
