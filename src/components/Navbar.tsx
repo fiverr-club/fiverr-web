@@ -31,7 +31,7 @@ export function Navbar() {
             href="/"
             className="flex shrink-0 items-center whitespace-nowrap text-2xl font-extrabold tracking-tight text-gray-900"
           >
-            <span>fiverrex</span>
+            <span>FIVERREX</span>
             <span className="text-[#1dbf73]">.</span>
           </Link>
 

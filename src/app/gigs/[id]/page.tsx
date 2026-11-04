@@ -53,7 +53,7 @@ export default function GigDetailPage() {
       {/* Breadcrumb */}
       <nav className="mb-6 flex items-center gap-2 text-xs font-medium text-gray-500">
         <Link href="/" className="hover:text-[#1dbf73]">
-          Fiverrex
+          FIVERREX
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <span>{gig.category}</span>
@@ -395,7 +395,7 @@ export default function GigDetailPage() {
               <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-emerald-50/70 p-3 text-[11px] text-emerald-900">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#1dbf73]" />
                 <div>
-                  <span className="font-bold">Fiverrex Escrow Guarantee:</span> Funds are held in
+                  <span className="font-bold">FIVERREX Escrow Guarantee:</span> Funds are held in
                   `fiverr-payment-service` and only released after you approve the final delivery.
                 </div>
               </div>

@@ -9,7 +9,7 @@ export function Footer() {
         <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
           <div className="space-y-3">
             <div className="flex items-center whitespace-nowrap text-2xl font-extrabold tracking-tight text-gray-900">
-              <span>fiverrex</span>
+              <span>FIVERREX</span>
               <span className="text-[#1dbf73]">.</span>
             </div>
             <p className="text-sm text-gray-600">
@@ -100,7 +100,7 @@ export function Footer() {
         </div>
 
         <div className="mt-8 flex flex-col items-center justify-between border-t border-gray-200 pt-6 text-xs text-gray-500 sm:flex-row">
-          <p>© {new Date().getFullYear()} Fiverrex International Ltd. Built with Next.js 15 &amp; Spring Boot 3 DDD.</p>
+          <p>© {new Date().getFullYear()} FIVERREX International Ltd. Built with Next.js 15 &amp; Spring Boot 3 DDD.</p>
           <div className="mt-2 flex gap-4 whitespace-nowrap sm:mt-0">
             <span>Escrow Protection Guarantee</span>
             <span>•</span>
