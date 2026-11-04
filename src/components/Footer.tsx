@@ -8,19 +8,16 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
           <div className="space-y-3">
-            <div className="flex items-center text-2xl font-extrabold tracking-tight text-gray-900">
-              <span>fiverr</span>
+            <div className="flex items-center whitespace-nowrap text-2xl font-extrabold tracking-tight text-gray-900">
+              <span>fiverrex</span>
               <span className="text-[#1dbf73]">.</span>
-              <span className="ml-1.5 rounded bg-[#0a4226] px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-[#1dbf73]">
-                club
-              </span>
             </div>
             <p className="text-sm text-gray-600">
               Cloud-native freelance services marketplace powered by 9 Spring Boot 3 DDD
               microservices, Apache Kafka event streaming, and Kubernetes Helm orchestration.
             </p>
-            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
-              <Shield className="h-4 w-4 text-[#1dbf73]" />
+            <div className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-emerald-700">
+              <Shield className="h-4 w-4 shrink-0 text-[#1dbf73]" />
               <span>DDD Hexagonal Architecture Verified</span>
             </div>
           </div>
@@ -103,8 +100,8 @@ export function Footer() {
         </div>
 
         <div className="mt-8 flex flex-col items-center justify-between border-t border-gray-200 pt-6 text-xs text-gray-500 sm:flex-row">
-          <p>© {new Date().getFullYear()} Fiverr Club International Ltd. Built with Next.js 15 &amp; Spring Boot 3 DDD.</p>
-          <div className="mt-2 flex gap-4 sm:mt-0">
+          <p>© {new Date().getFullYear()} Fiverrex International Ltd. Built with Next.js 15 &amp; Spring Boot 3 DDD.</p>
+          <div className="mt-2 flex gap-4 whitespace-nowrap sm:mt-0">
             <span>Escrow Protection Guarantee</span>
             <span>•</span>
             <span>Kubernetes Ready</span>

@@ -65,9 +65,9 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
           <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-12">
             <div className="space-y-6 lg:col-span-7">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-950/60 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
-                <Sparkles className="h-3.5 w-3.5 text-[#1dbf73]" />
-                <span>Fiverr Club Enterprise • Powered by 9 DDD Microservices</span>
+              <div className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-emerald-400/30 bg-emerald-950/60 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#1dbf73]" />
+                <span>Fiverrex Enterprise • Powered by 9 DDD Microservices</span>
               </div>
 
               <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
@@ -94,10 +94,10 @@ export default function HomePage() {
                 </div>
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1dbf73] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#19a463]"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-[#1dbf73] px-6 py-3 text-sm font-bold text-white transition hover:bg-[#19a463]"
                 >
                   <span>Search Gigs</span>
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-4 w-4 shrink-0" />
                 </button>
               </div>
 
@@ -284,7 +284,7 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* How Fiverr Club Escrow Works Section */}
+      {/* How Fiverrex Escrow Works Section */}
       <section className="border-t border-gray-200 bg-white py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 text-center">
@@ -292,7 +292,7 @@ export default function HomePage() {
               Trust &amp; Architecture
             </span>
             <h2 className="mt-2 text-2xl font-extrabold text-gray-900 sm:text-3xl">
-              How Fiverr Club Escrow Protection Works
+              How Fiverrex Escrow Protection Works
             </h2>
             <p className="mx-auto mt-2 max-w-2xl text-sm text-gray-600">
               Every order is orchestrated across our Order, Payment, and Notification microservices
