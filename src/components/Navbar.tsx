@@ -8,6 +8,7 @@ import {
   BookOpen,
   Briefcase,
   Check,
+  Heart,
   KeyRound,
   LayoutDashboard,
   MessageSquare,
@@ -26,6 +27,7 @@ import {
   DEFAULT_AUTH_ACCOUNTS,
   fiverrApi,
   getAuthSession,
+  getSavedGigIds,
   SEED_NOTIFICATIONS,
   setAuthSession,
 } from "@/lib/api";
@@ -39,6 +41,7 @@ export function Navbar() {
   const [notifications, setNotifications] =
     useState<NotificationItem[]>(SEED_NOTIFICATIONS);
   const [accounts, setAccounts] = useState<AuthAccountDto[]>(DEFAULT_AUTH_ACCOUNTS);
+  const [savedCount, setSavedCount] = useState<number>(2);
 
   const [notifOpen, setNotifOpen] = useState<boolean>(false);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
@@ -95,9 +98,15 @@ export function Navbar() {
       setSession(getAuthSession());
       loadNavbarData();
     };
+    const handleFavChange = () => {
+      setSavedCount(getSavedGigIds().length);
+    };
+    setSavedCount(getSavedGigIds().length);
     window.addEventListener("fiverrex-session-change", handleSessionChange);
+    window.addEventListener("fiverrex-favorites-change", handleFavChange);
     return () => {
       window.removeEventListener("fiverrex-session-change", handleSessionChange);
+      window.removeEventListener("fiverrex-favorites-change", handleFavChange);
     };
   }, []);
 
@@ -168,7 +177,8 @@ export function Navbar() {
   }
 
   const navItems = [
-    { href: "/", label: "Explore Marketplace", icon: Sparkles },
+    { href: "/", label: "Explore", icon: Sparkles },
+    { href: "/sellers", label: "Freelancers", icon: Users },
     { href: "/orders", label: "Orders & Escrow", icon: Briefcase, badge: "3" },
     { href: "/inbox", label: "Inbox", icon: MessageSquare, badge: "1" },
     { href: "/seller/dashboard", label: "Seller Studio", icon: LayoutDashboard },
@@ -246,6 +256,29 @@ export function Navbar() {
               {upgradingSeller ? "Upgrading..." : "Switch to Selling"}
             </span>
           </button>
+
+          {/* Saved / Wishlist Link */}
+          <Link
+            href="/favorites"
+            aria-label="Saved Gigs Wishlist"
+            title="Saved Gigs Wishlist"
+            className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition ${
+              pathname === "/favorites"
+                ? "border-rose-300 bg-rose-50 text-rose-500"
+                : "border-gray-200 bg-gray-50 text-gray-700 hover:border-rose-400 hover:text-rose-500"
+            }`}
+          >
+            <Heart
+              className={`h-4 w-4 shrink-0 ${
+                savedCount > 0 ? "fill-rose-500 text-rose-500" : ""
+              }`}
+            />
+            {savedCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                {savedCount}
+              </span>
+            )}
+          </Link>
 
           {/* Notification Bell Popover */}
           <div className="relative shrink-0">

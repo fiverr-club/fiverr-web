@@ -16,6 +16,10 @@ import {
   X,
   Lock,
   Send,
+  Heart,
+  Share2,
+  Reply,
+  ExternalLink,
 } from "lucide-react";
 import {
   SEED_GIGS,
@@ -23,7 +27,10 @@ import {
   type ReviewItem,
   type PackageTierName,
   fiverrApi,
+  isGigSaved,
+  toggleSavedGigId,
 } from "@/lib/api";
+import { GigCard } from "@/components/GigCard";
 
 export default function GigDetailPage() {
   const params = useParams<{ id: string }>();
@@ -32,6 +39,7 @@ export default function GigDetailPage() {
 
   const initialGig = SEED_GIGS.find((g) => g.id === gigId) || SEED_GIGS[0];
   const [gig, setGig] = useState<Gig>(initialGig);
+  const [allGigs, setAllGigs] = useState<Gig[]>(SEED_GIGS);
   const [reviews, setReviews] = useState<ReviewItem[]>(initialGig.reviews);
 
   const [selectedTier, setSelectedTier] = useState<PackageTierName>("Standard");
@@ -41,6 +49,10 @@ export default function GigDetailPage() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [orderSuccessNumber, setOrderSuccessNumber] = useState<string | null>(null);
 
+  // Wishlist & Share State
+  const [saved, setSaved] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
   // Interactive 3-Criteria Review Form State
   const [commRating, setCommRating] = useState<number>(5);
   const [serviceRating, setServiceRating] = useState<number>(5);
@@ -49,25 +61,57 @@ export default function GigDetailPage() {
   const [submittingReview, setSubmittingReview] = useState<boolean>(false);
   const [reviewToast, setReviewToast] = useState<string | null>(null);
 
+  // Seller Response State
+  const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
+  const [sellerReplyText, setSellerReplyText] = useState<string>("");
+  const [submittingReply, setSubmittingReply] = useState<boolean>(false);
+
   useEffect(() => {
+    setSaved(isGigSaved(gigId));
     async function loadGigDetails() {
-      const [liveGig, liveReviews] = await Promise.all([
+      const [liveGig, liveReviews, catalog] = await Promise.all([
         fiverrApi.getGigById(gigId),
         fiverrApi.getGigReviews(gigId),
+        fiverrApi.getGigs(),
       ]);
       if (liveGig) {
         setGig(liveGig);
+        setSaved(isGigSaved(liveGig.id));
       }
       if (liveReviews && liveReviews.length > 0) {
         setReviews(liveReviews);
       }
+      if (catalog && catalog.length > 0) {
+        setAllGigs(catalog);
+      }
     }
     loadGigDetails();
+
+    const handleFavChange = () => {
+      setSaved(isGigSaved(gigId));
+    };
+    window.addEventListener("fiverrex-favorites-change", handleFavChange);
+    return () => {
+      window.removeEventListener("fiverrex-favorites-change", handleFavChange);
+    };
   }, [gigId]);
 
   const activePackage = gig.packages[selectedTier] || gig.packages.Standard;
   const serviceFee = Number((activePackage.price * 0.055).toFixed(2));
   const totalEscrow = Number((activePackage.price + serviceFee).toFixed(2));
+
+  function handleToggleSave() {
+    const next = toggleSavedGigId(gig.id);
+    setSaved(next.includes(gig.id));
+  }
+
+  function handleShareGig() {
+    if (typeof window !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  }
 
   async function handleConfirmOrder(e: React.FormEvent) {
     e.preventDefault();
@@ -117,21 +161,71 @@ export default function GigDetailPage() {
     setReviewToast("Verified 3-criteria review published via POST /api/v1/reviews!");
   }
 
+  async function handleSendSellerReply(reviewId: string) {
+    if (!sellerReplyText.trim()) return;
+    setSubmittingReply(true);
+    const updated = await fiverrApi.addSellerResponse(reviewId, sellerReplyText.trim());
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.id === reviewId
+          ? { ...r, sellerResponse: updated.sellerResponse || sellerReplyText.trim() }
+          : r
+      )
+    );
+    setSubmittingReply(false);
+    setReplyingReviewId(null);
+    setSellerReplyText("");
+    setReviewToast("Seller response posted via POST /api/v1/reviews/{id}/seller-response!");
+  }
+
+  const relatedGigs = allGigs.filter((g) => g.id !== gig.id).slice(0, 3);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Breadcrumb */}
-      <nav className="mb-6 flex items-center gap-2 text-xs font-medium text-gray-500">
-        <Link href="/" className="hover:text-[#1dbf73]">
-          FIVERREX
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span>{gig.category}</span>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="font-semibold text-gray-800">{gig.subcategory}</span>
-      </nav>
+      {/* Breadcrumb & Actions Bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <nav className="flex items-center gap-2 text-xs font-medium text-gray-500">
+          <Link href="/" className="hover:text-[#1dbf73]">
+            FIVERREX
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <Link
+            href={`/?category=${encodeURIComponent(gig.category)}`}
+            className="hover:text-[#1dbf73]"
+          >
+            {gig.category}
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <span className="font-semibold text-gray-800">{gig.subcategory}</span>
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleToggleSave}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+              saved
+                ? "border-rose-300 bg-rose-50 text-rose-600"
+                : "border-gray-200 bg-white text-gray-700 hover:border-rose-300 hover:text-rose-500"
+            }`}
+          >
+            <Heart className={`h-3.5 w-3.5 ${saved ? "fill-rose-500 text-rose-500" : ""}`} />
+            <span>{saved ? "Saved in Wishlist" : "Save to Wishlist"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleShareGig}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:border-gray-300"
+          >
+            <Share2 className="h-3.5 w-3.5 text-[#1dbf73]" />
+            <span>{copiedLink ? "Link Copied!" : "Share Gig"}</span>
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
-        {/* Left Column: Gig Overview, Gallery, Seller Bio, Reviews */}
+        {/* Left Column: Gig Overview, Gallery, Seller Bio, Package Matrix, Reviews */}
         <div className="space-y-8 lg:col-span-7">
           {/* Title & Seller Bar */}
           <div>
@@ -140,7 +234,10 @@ export default function GigDetailPage() {
             </h1>
 
             <div className="mt-4 flex flex-wrap items-center gap-4 border-b border-gray-200 pb-4">
-              <div className="flex items-center gap-2.5">
+              <Link
+                href={`/sellers/${gig.seller.username}`}
+                className="flex items-center gap-2.5 transition hover:opacity-85"
+              >
                 <img
                   src={gig.seller.avatarUrl}
                   alt={gig.seller.displayName}
@@ -148,7 +245,7 @@ export default function GigDetailPage() {
                 />
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900">
+                    <span className="text-sm font-bold text-gray-900 hover:text-[#1dbf73]">
                       {gig.seller.displayName}
                     </span>
                     <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
@@ -157,7 +254,7 @@ export default function GigDetailPage() {
                   </div>
                   <p className="text-xs text-gray-500">@{gig.seller.username}</p>
                 </div>
-              </div>
+              </Link>
 
               <div className="h-5 w-px bg-gray-200" />
 
@@ -175,7 +272,7 @@ export default function GigDetailPage() {
 
           {/* Media Showcase */}
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-900 aspect-[16/10]">
+            <div className="aspect-[16/10] overflow-hidden rounded-2xl border border-gray-200 bg-gray-900">
               <img
                 src={gig.galleryUrls[selectedImageIdx] || gig.thumbnailUrl}
                 alt={gig.title}
@@ -231,11 +328,101 @@ export default function GigDetailPage() {
             </div>
           </div>
 
+          {/* Side-by-Side 3-Tier Package Comparison Matrix */}
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-bold text-gray-900">Compare 3-Tier Packages</h2>
+              <p className="text-xs text-gray-500">
+                Transparent scope, delivery SLA, and milestone pricing across Basic, Standard, and Premium tiers.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="p-4 font-bold text-gray-600">Package Tier</th>
+                    {(["Basic", "Standard", "Premium"] as PackageTierName[]).map((tier) => {
+                      const pkg = gig.packages[tier];
+                      const isSelected = selectedTier === tier;
+                      return (
+                        <th
+                          key={tier}
+                          className={`p-4 align-top ${
+                            isSelected ? "bg-emerald-50/50" : ""
+                          }`}
+                        >
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#1dbf73]">
+                            {tier}
+                          </span>
+                          <p className="mt-1 text-base font-extrabold text-gray-900">
+                            ${pkg.price}
+                          </p>
+                          <p className="mt-0.5 font-semibold text-gray-800">{pkg.title}</p>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <tr>
+                    <td className="p-4 font-bold text-gray-700">Scope</td>
+                    {(["Basic", "Standard", "Premium"] as PackageTierName[]).map((tier) => (
+                      <td key={tier} className="p-4 text-gray-600">
+                        {gig.packages[tier].description}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-gray-700">Delivery Time</td>
+                    {(["Basic", "Standard", "Premium"] as PackageTierName[]).map((tier) => (
+                      <td key={tier} className="p-4 font-bold text-gray-900">
+                        {gig.packages[tier].deliveryDays} Days
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-gray-700">Revisions</td>
+                    {(["Basic", "Standard", "Premium"] as PackageTierName[]).map((tier) => (
+                      <td key={tier} className="p-4 font-bold text-gray-900">
+                        {gig.packages[tier].revisions}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-gray-700">Select</td>
+                    {(["Basic", "Standard", "Premium"] as PackageTierName[]).map((tier) => (
+                      <td key={tier} className="p-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTier(tier);
+                            setOrderSuccessNumber(null);
+                            setCheckoutOpen(true);
+                          }}
+                          className={`w-full rounded-lg py-2 text-xs font-bold transition ${
+                            selectedTier === tier
+                              ? "bg-[#1dbf73] text-white hover:bg-[#19a463]"
+                              : "border border-gray-300 bg-white text-gray-800 hover:border-[#1dbf73]"
+                          }`}
+                        >
+                          Select {tier} (${gig.packages[tier].price})
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* About The Seller Card */}
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-bold text-gray-900">About The Seller</h2>
             <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
+              <Link
+                href={`/sellers/${gig.seller.username}`}
+                className="flex items-center gap-4 transition hover:opacity-90"
+              >
                 <img
                   src={gig.seller.avatarUrl}
                   alt={gig.seller.displayName}
@@ -243,7 +430,9 @@ export default function GigDetailPage() {
                 />
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-gray-900">{gig.seller.displayName}</h3>
+                    <h3 className="text-base font-bold text-gray-900 hover:text-[#1dbf73]">
+                      {gig.seller.displayName}
+                    </h3>
                     <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-xs font-bold text-[#1dbf73]">
                       <Award className="h-3.5 w-3.5" />
                       {gig.seller.level}
@@ -251,14 +440,23 @@ export default function GigDetailPage() {
                   </div>
                   <p className="text-xs font-medium text-gray-600">{gig.seller.tagline}</p>
                 </div>
-              </div>
-              <Link
-                href="/inbox"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-800 transition hover:border-gray-900"
-              >
-                <MessageSquare className="h-4 w-4 text-[#1dbf73]" />
-                <span>Contact Me</span>
               </Link>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/sellers/${gig.seller.username}`}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#1dbf73] bg-emerald-50/50 px-3.5 py-2 text-xs font-bold text-[#0a4226] transition hover:bg-[#1dbf73] hover:text-white"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>View Full Portfolio</span>
+                </Link>
+                <Link
+                  href="/inbox"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-800 transition hover:border-gray-900"
+                >
+                  <MessageSquare className="h-4 w-4 text-[#1dbf73]" />
+                  <span>Contact Me</span>
+                </Link>
+              </div>
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-4 rounded-xl bg-gray-50 p-4 text-xs sm:grid-cols-4">
@@ -342,7 +540,7 @@ export default function GigDetailPage() {
             {/* Interactive Write a Verified Review Form */}
             <form
               onSubmit={handleSubmitReview}
-              className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3"
+              className="mt-6 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4"
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0a4226]">
@@ -455,10 +653,51 @@ export default function GigDetailPage() {
                       </div>
                     </div>
                     <p className="mt-2.5 text-sm text-gray-700">{rev.comment}</p>
-                    {rev.sellerResponse && (
+                    {rev.sellerResponse ? (
                       <div className="mt-3 rounded-lg bg-emerald-50/70 p-3 text-xs text-gray-700">
                         <span className="font-bold text-[#0a4226]">Seller&apos;s Response: </span>
                         {rev.sellerResponse}
+                      </div>
+                    ) : (
+                      <div className="mt-2">
+                        {replyingReviewId === rev.id ? (
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              type="text"
+                              value={sellerReplyText}
+                              onChange={(e) => setSellerReplyText(e.target.value)}
+                              placeholder="Write official seller response (`POST /api/v1/reviews/{id}/seller-response`)..."
+                              className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:border-[#1dbf73] focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={submittingReply}
+                              onClick={() => handleSendSellerReply(rev.id)}
+                              className="rounded-lg bg-[#0a4226] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#1dbf73]"
+                            >
+                              {submittingReply ? "Saving..." : "Publish Reply"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReplyingReviewId(null)}
+                              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-500"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingReviewId(rev.id);
+                              setSellerReplyText("");
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#1dbf73] hover:underline"
+                          >
+                            <Reply className="h-3 w-3" />
+                            <span>Reply as Seller</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -480,7 +719,7 @@ export default function GigDetailPage() {
                     key={tier}
                     type="button"
                     onClick={() => setSelectedTier(tier)}
-                    className={` border-b-2 py-3.5 text-xs font-extrabold uppercase tracking-wider transition ${
+                    className={`border-b-2 py-3.5 text-xs font-extrabold uppercase tracking-wider transition ${
                       active
                         ? "border-[#1dbf73] bg-white text-[#1dbf73]"
                         : "border-transparent text-gray-500 hover:text-gray-800"
@@ -557,6 +796,28 @@ export default function GigDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* More Gigs You May Like */}
+      {relatedGigs.length > 0 && (
+        <section className="mt-14 border-t border-gray-200 pt-10">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-extrabold text-gray-900">More Gigs You May Like</h2>
+              <p className="text-xs text-gray-500">
+                Explore other verified architecture, AI, and design packages on FIVERREX.
+              </p>
+            </div>
+            <Link href="/" className="text-xs font-bold text-[#1dbf73] hover:underline">
+              Browse Full Catalog →
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {relatedGigs.map((rg) => (
+              <GigCard key={rg.id} gig={rg} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Checkout / Escrow Creation Modal */}
       {checkoutOpen && (

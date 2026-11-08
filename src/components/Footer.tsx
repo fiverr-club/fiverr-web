@@ -1,8 +1,12 @@
 import React from "react";
 import Link from "next/link";
-import { Shield, Server, Cpu, Lock } from "lucide-react";
+import { Shield, Server, Cpu, Lock, ExternalLink } from "lucide-react";
 
 export function Footer() {
+  const techDocsUrl =
+    process.env.NEXT_PUBLIC_TECH_DOCS_URL ||
+    "https://fiverr-technical-doc.vercel.app";
+
   return (
     <footer className="border-t border-gray-200 bg-[#0d084d]/5 text-gray-600">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -47,14 +51,29 @@ export function Footer() {
                   UI/UX &amp; Design Systems
                 </Link>
               </li>
+              <li>
+                <Link href="/?category=Video+%26+Animation" className="hover:text-[#1dbf73]">
+                  Video &amp; 3D Motion
+                </Link>
+              </li>
             </ul>
           </div>
 
           <div>
             <h4 className="mb-3 text-sm font-bold uppercase tracking-wider text-gray-900">
-              Workspace &amp; Studio
+              Marketplace &amp; Studio
             </h4>
             <ul className="space-y-2 text-sm">
+              <li>
+                <Link href="/sellers" className="hover:text-[#1dbf73]">
+                  Verified Freelancers Directory
+                </Link>
+              </li>
+              <li>
+                <Link href="/favorites" className="hover:text-[#1dbf73]">
+                  Saved Gigs Wishlist
+                </Link>
+              </li>
               <li>
                 <Link href="/orders" className="hover:text-[#1dbf73]">
                   Buyer &amp; Seller Order Escrow
@@ -71,9 +90,15 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/gigs/gig-101" className="hover:text-[#1dbf73]">
-                  3-Tier Package Configurator
-                </Link>
+                <a
+                  href={techDocsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-[#1dbf73] hover:underline"
+                >
+                  <span>Technical Documentation</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
               </li>
             </ul>
           </div>

@@ -377,6 +377,205 @@ export function buildSessionForAccount(
   };
 }
 
+// ============================================================================
+// Saved Gigs / Wishlist Persistence (localStorage + CustomEvent sync)
+// ============================================================================
+
+const SAVED_GIGS_STORAGE_KEY = "fiverrex_saved_gigs";
+const DEFAULT_SAVED_GIG_IDS = ["gig-101", "gig-103"];
+
+export function getSavedGigIds(): string[] {
+  if (typeof window === "undefined") {
+    return DEFAULT_SAVED_GIG_IDS;
+  }
+  try {
+    const raw = window.localStorage.getItem(SAVED_GIGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SAVED_GIG_IDS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : DEFAULT_SAVED_GIG_IDS;
+  } catch {
+    return DEFAULT_SAVED_GIG_IDS;
+  }
+}
+
+export function isGigSaved(gigId: string): boolean {
+  const saved = getSavedGigIds();
+  return saved.includes(gigId);
+}
+
+export function toggleSavedGigId(gigId: string): string[] {
+  if (typeof window === "undefined") return DEFAULT_SAVED_GIG_IDS;
+  const current = getSavedGigIds();
+  const next = current.includes(gigId)
+    ? current.filter((id) => id !== gigId)
+    : [...current, gigId];
+  try {
+    window.localStorage.setItem(SAVED_GIGS_STORAGE_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("fiverrex-favorites-change", { detail: next }));
+  } catch {
+    // ignore storage quota errors
+  }
+  return next;
+}
+
+export function clearSavedGigs(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SAVED_GIGS_STORAGE_KEY, JSON.stringify([]));
+    window.dispatchEvent(new CustomEvent("fiverrex-favorites-change", { detail: [] }));
+  } catch {
+    // ignore
+  }
+}
+
+export const SEED_USER_PROFILES: UserProfileDto[] = [
+  {
+    id: "aaaaaaaa-1111-1111-1111-111111111111",
+    accountId: "11111111-1111-1111-1111-111111111111",
+    username: "alex_architect",
+    displayName: "Alex Rivera",
+    headline: "Principal Distributed Systems & Java DDD Architect",
+    bio: "Former Staff Engineer specializing in Java 21, Spring Boot 3, Domain-Driven Design (DDD), Hexagonal Ports & Adapters, Apache Kafka, and Kubernetes Helm infrastructure. Over 180 enterprise systems delivered with 100% on-time completion.",
+    avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+    country: "United States",
+    languages: ["English (Fluent)", "Spanish (Native)"],
+    skills: ["Java 21", "Spring Boot 3", "DDD Hexagonal", "Apache Kafka", "Kubernetes", "PostgreSQL"],
+    hourlyRate: 185,
+    seller: true,
+    sellerLevel: "Top Rated Seller",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 248,
+    ratingAverage: 5.0,
+    createdAt: "2021-03-15T10:00:00Z",
+  },
+  {
+    id: "aaaaaaaa-2222-2222-2222-222222222222",
+    accountId: "22222222-2222-2222-2222-222222222222",
+    username: "elena_ai",
+    displayName: "Sophia Chen",
+    headline: "Staff Frontend Engineer & Next.js 15 Product Architect",
+    bio: "Ex-Shopify & Vercel ecosystem specialist crafting ultra-fast Next.js 15 App Router applications with TypeScript, Tailwind CSS, interactive escrow workspaces, and seamless REST/GraphQL API integrations.",
+    avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80",
+    country: "Canada",
+    languages: ["English (Native)", "Mandarin (Fluent)"],
+    skills: ["Next.js 15", "React 19", "TypeScript", "Tailwind CSS", "Design Systems", "Vercel"],
+    hourlyRate: 165,
+    seller: true,
+    sellerLevel: "Pro Verified",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 184,
+    ratingAverage: 4.9,
+    createdAt: "2022-01-10T10:00:00Z",
+  },
+  {
+    id: "aaaaaaaa-4444-4444-4444-444444444444",
+    accountId: "22222222-2222-2222-2222-222222222222",
+    username: "dr_aryan_ai",
+    displayName: "Dr. Aryan Mehta",
+    headline: "AI Research Scientist & Production LLM / RAG Architect",
+    bio: "PhD in Machine Learning with 8+ years deploying low-latency AI agents, semantic search engines, pgvector pipelines, and multi-agent LangGraph workflows for global enterprises.",
+    avatarUrl: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=250&q=80",
+    country: "Singapore",
+    languages: ["English (Native)", "Hindi (Native)"],
+    skills: ["AI Agents", "LangChain", "OpenAI", "pgvector", "Python", "RAG Pipelines"],
+    hourlyRate: 210,
+    seller: true,
+    sellerLevel: "Top Rated Seller",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 312,
+    ratingAverage: 4.9,
+    createdAt: "2020-08-20T10:00:00Z",
+  },
+  {
+    id: "aaaaaaaa-5555-5555-5555-555555555555",
+    accountId: "11111111-1111-1111-1111-111111111111",
+    username: "claire_studio",
+    displayName: "Claire Dubois",
+    headline: "Creative Director & Enterprise Figma Design Systems Lead",
+    bio: "Paris-based product designer helping high-growth startups craft memorable brand identities and scalable Figma component libraries with multi-theme design tokens.",
+    avatarUrl: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=250&q=80",
+    country: "France",
+    languages: ["English (Fluent)", "French (Native)"],
+    skills: ["Figma", "Design Systems", "UI/UX", "Brand Identity", "Interactive Prototyping"],
+    hourlyRate: 145,
+    seller: true,
+    sellerLevel: "Level 2 Seller",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 142,
+    ratingAverage: 4.9,
+    createdAt: "2022-05-12T10:00:00Z",
+  },
+  {
+    id: "aaaaaaaa-6666-6666-6666-666666666666",
+    accountId: "11111111-1111-1111-1111-111111111111",
+    username: "marcus_sre",
+    displayName: "Viktor Lindqvist",
+    headline: "CNCF Kubestronaut & Principal Kubernetes / DevOps SRE",
+    bio: "Certified Kubernetes Security Specialist (CKS, CKA, CKAD) helping teams migrate from Docker Compose to zero-downtime Kubernetes clusters with Helm v3, Kustomize, ArgoCD, and NetworkPolicies.",
+    avatarUrl: "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=250&q=80",
+    country: "Sweden",
+    languages: ["English (Fluent)", "Swedish (Native)"],
+    skills: ["Kubernetes", "Helm v3", "Kustomize", "GitHub Actions", "Terraform", "Prometheus"],
+    hourlyRate: 175,
+    seller: true,
+    sellerLevel: "Top Rated Seller",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 196,
+    ratingAverage: 5.0,
+    createdAt: "2020-11-04T10:00:00Z",
+  },
+  {
+    id: "aaaaaaaa-7777-7777-7777-777777777777",
+    accountId: "22222222-2222-2222-2222-222222222222",
+    username: "sofia_fintech",
+    displayName: "Enzo Moretti",
+    headline: "3D Motion Director & Fintech Product Launch Specialist",
+    bio: "Creating high-impact 4K 60fps SaaS product launch films, 3D interactive walkthroughs, and motion design systems for YCombinator startups and global fintech teams.",
+    avatarUrl: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=250&q=80",
+    country: "Italy",
+    languages: ["English (Fluent)", "Italian (Native)"],
+    skills: ["After Effects", "3D Motion", "SaaS Explainers", "Cinema 4D", "Sound Design"],
+    hourlyRate: 140,
+    seller: true,
+    sellerLevel: "Level 2 Seller",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 97,
+    ratingAverage: 4.8,
+    createdAt: "2022-07-19T10:00:00Z",
+  },
+  {
+    id: "aaaaaaaa-3333-3333-3333-333333333333",
+    accountId: "33333333-3333-3333-3333-333333333333",
+    username: "jordan_taylor",
+    displayName: "Jordan Taylor",
+    headline: "VP of Engineering & Full-Stack Cloud Architect",
+    bio: "Enterprise engineering leader and verified FIVERREX dual Buyer/Seller building cloud-native marketplaces and financial escrow platforms.",
+    avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80",
+    country: "United States",
+    languages: ["English (Native)"],
+    skills: ["System Architecture", "Spring Boot", "Next.js", "Escrow Systems", "Cloud Native"],
+    hourlyRate: 160,
+    seller: true,
+    sellerLevel: "Pro Verified",
+    availabilityStatus: "AVAILABLE",
+    completedOrdersCount: 64,
+    ratingAverage: 4.95,
+    createdAt: "2023-02-01T10:00:00Z",
+  },
+];
+
+const USERNAME_ALIASES: Record<string, string> = {
+  alex_ddd_arch: "alex_architect",
+  sophia_ui_craft: "elena_ai",
+  k8s_viktor: "marcus_sre",
+  motion_enzo: "sofia_fintech",
+};
+
+export function resolveCanonicalUsername(username: string): string {
+  const clean = (username || "").trim().replace(/^@/, "").toLowerCase();
+  return USERNAME_ALIASES[clean] || clean;
+}
+
 export const CATEGORIES = [
   "All Categories",
   "AI Services",
@@ -403,7 +602,7 @@ export const SEED_GIGS: Gig[] = [
     ],
     seller: {
       id: "11111111-1111-1111-1111-111111111111",
-      username: "alex_ddd_arch",
+      username: "alex_architect",
       displayName: "Alex Rivera",
       avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
       level: "Top Rated Seller",
@@ -527,7 +726,7 @@ export const SEED_GIGS: Gig[] = [
     ],
     seller: {
       id: "22222222-2222-2222-2222-222222222222",
-      username: "sophia_ui_craft",
+      username: "elena_ai",
       displayName: "Sophia Chen",
       avatarUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80",
       level: "Pro Verified",
@@ -826,7 +1025,7 @@ export const SEED_GIGS: Gig[] = [
     ],
     seller: {
       id: "11111111-1111-1111-1111-111111111111",
-      username: "k8s_viktor",
+      username: "marcus_sre",
       displayName: "Viktor Lindqvist",
       avatarUrl: "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=250&q=80",
       level: "Top Rated Seller",
@@ -913,7 +1112,7 @@ export const SEED_GIGS: Gig[] = [
     ],
     seller: {
       id: "22222222-2222-2222-2222-222222222222",
-      username: "motion_enzo",
+      username: "sofia_fintech",
       displayName: "Enzo Moretti",
       avatarUrl: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=250&q=80",
       level: "Level 2 Seller",
@@ -1788,38 +1987,46 @@ export const fiverrApi = {
 
   // 2. User & Seller Profile Service (/api/v1/profiles, /api/v1/users, /api/v1/sellers)
   async getSellers(): Promise<UserProfileDto[]> {
-    const fallback: UserProfileDto[] = [
-      {
-        id: "aaaaaaaa-1111-1111-1111-111111111111",
-        accountId: "11111111-1111-1111-1111-111111111111",
-        username: "alex_architect",
-        displayName: "Alex Rivera",
-        headline: "Principal Distributed Systems & Cloud Native Architect",
-        bio: "12+ years architecting high-throughput Spring Boot, Kafka, and Kubernetes platforms.",
-        avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=256&q=80",
-        country: "United States",
-        languages: ["English", "Spanish"],
-        skills: ["Java 21", "Spring Boot", "DDD", "Kafka", "Kubernetes"],
-        hourlyRate: 185,
-        seller: true,
-        sellerLevel: "TOP_RATED",
-        availabilityStatus: "AVAILABLE",
-        completedOrdersCount: 148,
-        ratingAverage: 4.98,
-      },
+    const rawList = await fetchWithFallback<UserProfileDto[]>("/sellers", SEED_USER_PROFILES);
+    const liveSellers = Array.isArray(rawList) ? rawList : [];
+    const seenUsernames = new Set(liveSellers.map((s) => resolveCanonicalUsername(s.username)));
+    return [
+      ...liveSellers,
+      ...SEED_USER_PROFILES.filter(
+        (seed) => !seenUsernames.has(resolveCanonicalUsername(seed.username))
+      ),
     ];
-    return fetchWithFallback<UserProfileDto[]>("/sellers", fallback);
   },
 
   async getProfileById(profileId: string): Promise<UserProfileDto> {
     const sellers = await this.getSellers();
     const uuid = resolveBackendUuid(profileId, "aaaaaaaa-1111-1111-1111-111111111111");
-    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, sellers[0]);
+    const matched = sellers.find((s) => s.id === uuid || s.accountId === uuid) || sellers[0];
+    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, matched);
   },
 
   async getProfileByUsername(username: string): Promise<UserProfileDto> {
-    const sellers = await this.getSellers();
-    return fetchWithFallback<UserProfileDto>(`/users/${username}`, sellers[0]);
+    const canonical = resolveCanonicalUsername(username);
+    const seedMatch =
+      SEED_USER_PROFILES.find(
+        (u) => resolveCanonicalUsername(u.username) === canonical
+      ) || SEED_USER_PROFILES[0];
+    const fetched = await fetchWithFallback<UserProfileDto>(
+      `/users/${canonical}`,
+      seedMatch
+    );
+    if (
+      fetched &&
+      resolveCanonicalUsername(fetched.username) !== canonical &&
+      seedMatch
+    ) {
+      return seedMatch;
+    }
+    return fetched || seedMatch;
+  },
+
+  async getUserByUsername(username: string): Promise<UserProfileDto> {
+    return this.getProfileByUsername(username);
   },
 
   async createProfile(payload: {
@@ -1850,12 +2057,21 @@ export const fiverrApi = {
       country?: string;
       languages?: string[];
       skills?: string[];
+      hourlyRate?: number;
       availabilityStatus?: string;
     }
   ): Promise<UserProfileDto> {
     const sellers = await this.getSellers();
     const uuid = resolveBackendUuid(profileId, getAuthSession().profileId);
-    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, sellers[0], {
+    const fallbackBase =
+      sellers.find((s) => s.id === profileId || s.id === uuid) || sellers[0];
+    const fallbackUpdated: UserProfileDto = {
+      ...fallbackBase,
+      ...payload,
+      hourlyRate: payload.hourlyRate ?? fallbackBase.hourlyRate,
+      availabilityStatus: payload.availabilityStatus || "AVAILABLE",
+    };
+    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, fallbackUpdated, {
       method: "PUT",
       body: JSON.stringify({
         availabilityStatus: "AVAILABLE",
@@ -2596,26 +2812,34 @@ export const fiverrApi = {
 
   async addSellerResponse(
     reviewId: string,
-    payload: { sellerId?: string; sellerResponse: string }
+    payload: string | { sellerId?: string; sellerResponse: string }
   ): Promise<ReviewItem> {
+    const responseText =
+      typeof payload === "string" ? payload : payload.sellerResponse;
+    const rawSellerId =
+      typeof payload === "string" ? undefined : payload.sellerId;
     const uuid = resolveBackendUuid(reviewId, "cf4277bb-47d0-46dc-83d4-a54ef1ebb7be");
     const sellerUuid = resolveBackendUuid(
-      payload.sellerId || getAuthSession().sellerId,
+      rawSellerId || getAuthSession().sellerId,
       "22222222-2222-2222-2222-222222222222"
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await fetchWithFallback<any>(
       `/reviews/${uuid}/seller-response`,
-      { ...SEED_GIGS[0].reviews[0], sellerResponse: payload.sellerResponse },
+      { ...SEED_GIGS[0].reviews[0], id: reviewId, sellerResponse: responseText },
       {
         method: "POST",
         body: JSON.stringify({
           sellerId: sellerUuid,
-          sellerResponse: payload.sellerResponse,
+          sellerResponse: responseText,
         }),
       }
     );
-    return mapBackendReviewToUi(raw);
+    const mapped = mapBackendReviewToUi(raw);
+    return {
+      ...mapped,
+      sellerResponse: mapped.sellerResponse || responseText,
+    };
   },
 
   // 8. Multi-Channel Notification Service (/api/v1/notifications)

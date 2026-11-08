@@ -1,11 +1,32 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Star, Heart, Award, Clock } from "lucide-react";
-import type { Gig } from "@/lib/api";
+import { type Gig, isGigSaved, toggleSavedGigId } from "@/lib/api";
 
 export function GigCard({ gig }: { gig: Gig }) {
   const isTopRated = gig.seller.level === "Top Rated Seller";
   const isPro = gig.seller.level === "Pro Verified";
+  const [saved, setSaved] = useState<boolean>(false);
+
+  useEffect(() => {
+    setSaved(isGigSaved(gig.id));
+    const handleFavChange = () => {
+      setSaved(isGigSaved(gig.id));
+    };
+    window.addEventListener("fiverrex-favorites-change", handleFavChange);
+    return () => {
+      window.removeEventListener("fiverrex-favorites-change", handleFavChange);
+    };
+  }, [gig.id]);
+
+  function handleToggleSave(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = toggleSavedGigId(gig.id);
+    setSaved(next.includes(gig.id));
+  }
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
@@ -29,10 +50,13 @@ export function GigCard({ gig }: { gig: Gig }) {
         </div>
         <button
           type="button"
-          aria-label="Save to favorites"
-          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-gray-600 shadow transition hover:text-rose-500"
+          onClick={handleToggleSave}
+          aria-label={saved ? "Remove from saved gigs" : "Save to favorites"}
+          className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow transition hover:scale-105 ${
+            saved ? "text-rose-500" : "text-gray-600 hover:text-rose-500"
+          }`}
         >
-          <Heart className="h-4 w-4" />
+          <Heart className={`h-4 w-4 ${saved ? "fill-rose-500 text-rose-500" : ""}`} />
         </button>
       </Link>
 
@@ -40,20 +64,25 @@ export function GigCard({ gig }: { gig: Gig }) {
       <div className="flex flex-1 flex-col justify-between p-4">
         <div>
           {/* Seller Header */}
-          <div className="mb-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <Link
+              href={`/sellers/${gig.seller.username}`}
+              className="flex items-center gap-2 rounded-lg transition hover:opacity-85"
+            >
               <img
                 src={gig.seller.avatarUrl}
                 alt={gig.seller.displayName}
                 className="h-7 w-7 rounded-full object-cover ring-1 ring-gray-200"
               />
               <div>
-                <p className="text-xs font-bold text-gray-900">{gig.seller.displayName}</p>
+                <p className="text-xs font-bold text-gray-900 hover:text-[#1dbf73]">
+                  {gig.seller.displayName}
+                </p>
                 <p className="text-[11px] text-gray-500">@{gig.seller.username}</p>
               </div>
-            </div>
+            </Link>
             <span
-              className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+              className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold ${
                 isTopRated
                   ? "bg-amber-100 text-amber-800"
                   : isPro
