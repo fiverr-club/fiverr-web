@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { Suspense, useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Search,
   Sparkles,
@@ -24,10 +25,12 @@ import {
 } from "lucide-react";
 import {
   CATEGORIES,
+  FIVERREX_DATA_EVENT,
   SEED_GIGS,
   SEED_USER_PROFILES,
   fiverrApi,
   getSavedGigIds,
+  getStoredGigs,
   type Gig,
   type GatewayStatusInfo,
   type SellerLevel,
@@ -68,7 +71,8 @@ const FAQ_ITEMS = [
   },
 ];
 
-export default function HomePage() {
+function HomePageContent() {
+  const searchParams = useSearchParams();
   const [gigs, setGigs] = useState<Gig[]>(SEED_GIGS);
   const [jobs, setJobs] = useState<JobProject[]>(SEED_JOBS);
   const [sellers, setSellers] = useState<UserProfileDto[]>(SEED_USER_PROFILES);
@@ -84,20 +88,22 @@ export default function HomePage() {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
   useEffect(() => {
+    const catParam = searchParams.get("category");
+    const qParam = searchParams.get("q");
+    if (catParam && CATEGORIES.includes(catParam as (typeof CATEGORIES)[number])) {
+      setSelectedCategory(catParam);
+    } else if (catParam === "") {
+      setSelectedCategory("All Categories");
+    }
+    if (qParam !== null) {
+      setSearchQuery(qParam);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     setSavedIds(getSavedGigIds());
     setJobs(getStoredJobs());
-
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const catParam = params.get("category");
-      const qParam = params.get("q");
-      if (catParam && CATEGORIES.includes(catParam as (typeof CATEGORIES)[number])) {
-        setSelectedCategory(catParam);
-      }
-      if (qParam) {
-        setSearchQuery(qParam);
-      }
-    }
+    setGigs(getStoredGigs());
 
     async function loadMarketplace() {
       const [liveGigs, liveGateway, liveSellers] = await Promise.all([
@@ -120,9 +126,19 @@ export default function HomePage() {
     const handleFavChange = () => {
       setSavedIds(getSavedGigIds());
     };
+    const handleDataChange = () => {
+      setGigs(getStoredGigs());
+    };
+    const handleJobsChange = () => {
+      setJobs(getStoredJobs());
+    };
     window.addEventListener("fiverrex-favorites-change", handleFavChange);
+    window.addEventListener(FIVERREX_DATA_EVENT, handleDataChange);
+    window.addEventListener("fiverrex-jobs-change", handleJobsChange);
     return () => {
       window.removeEventListener("fiverrex-favorites-change", handleFavChange);
+      window.removeEventListener(FIVERREX_DATA_EVENT, handleDataChange);
+      window.removeEventListener("fiverrex-jobs-change", handleJobsChange);
     };
   }, []);
 
@@ -805,5 +821,13 @@ export default function HomePage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#f8fafc]" />}>
+      <HomePageContent />
+    </Suspense>
   );
 }

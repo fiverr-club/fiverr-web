@@ -1832,6 +1832,99 @@ export function mapBackendConversationToUi(raw: any, messages?: MessageItem[]): 
 }
 
 // ============================================================================
+// Persistent Client-Side Store (Ensures Full End-to-End State Across Reloads)
+// ============================================================================
+
+export const FIVERREX_DATA_EVENT = "fiverrex-data-change";
+
+const STORE_KEYS = {
+  gigs: "fiverrex_store_gigs_v1",
+  orders: "fiverrex_store_orders_v1",
+  escrows: "fiverrex_store_escrows_v1",
+  wallets: "fiverrex_store_wallets_v1",
+  withdrawals: "fiverrex_store_withdrawals_v1",
+  conversations: "fiverrex_store_conversations_v1",
+  reviews: "fiverrex_store_reviews_v1",
+  notifications: "fiverrex_store_notifications_v1",
+  profiles: "fiverrex_store_profiles_v1",
+} as const;
+
+export interface WithdrawalRecord {
+  id: string;
+  sellerId: string;
+  amount: number;
+  payoutDestination: string;
+  status: "COMPLETED" | "PROCESSING";
+  createdAt: string;
+}
+
+function readLocalStore<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as T;
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalStore<T>(key: string, value: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    window.dispatchEvent(new CustomEvent(FIVERREX_DATA_EVENT, { detail: { key } }));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function getStoredGigs(): Gig[] {
+  const stored = readLocalStore<Gig[] | null>(STORE_KEYS.gigs, null);
+  return Array.isArray(stored) && stored.length > 0 ? stored : SEED_GIGS;
+}
+
+export function getStoredOrders(): Order[] {
+  const stored = readLocalStore<Order[] | null>(STORE_KEYS.orders, null);
+  return Array.isArray(stored) ? stored : SEED_ORDERS;
+}
+
+export function getStoredEscrows(): EscrowTransactionItem[] {
+  const stored = readLocalStore<EscrowTransactionItem[] | null>(STORE_KEYS.escrows, null);
+  return Array.isArray(stored) ? stored : SEED_ESCROW_TRANSACTIONS;
+}
+
+export function getStoredWallets(): SellerWalletItem[] {
+  const stored = readLocalStore<SellerWalletItem[] | null>(STORE_KEYS.wallets, null);
+  return Array.isArray(stored) && stored.length > 0 ? stored : SEED_WALLETS;
+}
+
+export function getStoredWithdrawals(): WithdrawalRecord[] {
+  const stored = readLocalStore<WithdrawalRecord[] | null>(STORE_KEYS.withdrawals, null);
+  return Array.isArray(stored) ? stored : [];
+}
+
+export function getStoredConversations(): Conversation[] {
+  const stored = readLocalStore<Conversation[] | null>(STORE_KEYS.conversations, null);
+  return Array.isArray(stored) && stored.length > 0 ? stored : SEED_CONVERSATIONS;
+}
+
+export function getStoredNotifications(): NotificationItem[] {
+  const stored = readLocalStore<NotificationItem[] | null>(STORE_KEYS.notifications, null);
+  return Array.isArray(stored) ? stored : SEED_NOTIFICATIONS;
+}
+
+export function getStoredProfiles(): UserProfileDto[] {
+  const stored = readLocalStore<UserProfileDto[] | null>(STORE_KEYS.profiles, null);
+  return Array.isArray(stored) && stored.length > 0 ? stored : SEED_USER_PROFILES;
+}
+
+function getStoredReviewsMap(): Record<string, ReviewItem[]> {
+  return readLocalStore<Record<string, ReviewItem[]>>(STORE_KEYS.reviews, {});
+}
+
+// ============================================================================
 // HTTP Fetch Client with Auth Headers & Automatic Fallback
 // ============================================================================
 
@@ -2052,12 +2145,13 @@ export const fiverrApi = {
 
   // 2. User & Seller Profile Service (/api/v1/profiles, /api/v1/users, /api/v1/sellers)
   async getSellers(): Promise<UserProfileDto[]> {
-    const rawList = await fetchWithFallback<UserProfileDto[]>("/sellers", SEED_USER_PROFILES);
+    const localProfiles = getStoredProfiles();
+    const rawList = await fetchWithFallback<UserProfileDto[]>("/sellers", localProfiles);
     const liveSellers = Array.isArray(rawList) ? rawList : [];
     const seenUsernames = new Set(liveSellers.map((s) => resolveCanonicalUsername(s.username)));
     return [
       ...liveSellers,
-      ...SEED_USER_PROFILES.filter(
+      ...localProfiles.filter(
         (seed) => !seenUsernames.has(resolveCanonicalUsername(seed.username))
       ),
     ];
@@ -2066,28 +2160,29 @@ export const fiverrApi = {
   async getProfileById(profileId: string): Promise<UserProfileDto> {
     const sellers = await this.getSellers();
     const uuid = resolveBackendUuid(profileId, "aaaaaaaa-1111-1111-1111-111111111111");
-    const matched = sellers.find((s) => s.id === uuid || s.accountId === uuid) || sellers[0];
+    const matched = sellers.find((s) => s.id === profileId || s.id === uuid || s.accountId === uuid) || sellers[0];
     return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, matched);
   },
 
   async getProfileByUsername(username: string): Promise<UserProfileDto> {
     const canonical = resolveCanonicalUsername(username);
-    const seedMatch =
-      SEED_USER_PROFILES.find(
+    const localProfiles = getStoredProfiles();
+    const localMatch =
+      localProfiles.find(
         (u) => resolveCanonicalUsername(u.username) === canonical
-      ) || SEED_USER_PROFILES[0];
+      ) || localProfiles[0];
     const fetched = await fetchWithFallback<UserProfileDto>(
       `/users/${canonical}`,
-      seedMatch
+      localMatch
     );
     if (
       fetched &&
       resolveCanonicalUsername(fetched.username) !== canonical &&
-      seedMatch
+      localMatch
     ) {
-      return seedMatch;
+      return localMatch;
     }
-    return fetched || seedMatch;
+    return fetched || localMatch;
   },
 
   async getUserByUsername(username: string): Promise<UserProfileDto> {
@@ -2126,23 +2221,37 @@ export const fiverrApi = {
       availabilityStatus?: string;
     }
   ): Promise<UserProfileDto> {
-    const sellers = await this.getSellers();
+    const localProfiles = getStoredProfiles();
     const uuid = resolveBackendUuid(profileId, getAuthSession().profileId);
     const fallbackBase =
-      sellers.find((s) => s.id === profileId || s.id === uuid) || sellers[0];
+      localProfiles.find((s) => s.id === profileId || s.id === uuid) || localProfiles[0];
     const fallbackUpdated: UserProfileDto = {
       ...fallbackBase,
       ...payload,
       hourlyRate: payload.hourlyRate ?? fallbackBase.hourlyRate,
       availabilityStatus: payload.availabilityStatus || "AVAILABLE",
     };
-    return fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, fallbackUpdated, {
+    const result = await fetchWithFallback<UserProfileDto>(`/profiles/${uuid}`, fallbackUpdated, {
       method: "PUT",
       body: JSON.stringify({
         availabilityStatus: "AVAILABLE",
         ...payload,
       }),
     });
+    const merged: UserProfileDto = {
+      ...fallbackUpdated,
+      ...result,
+      displayName: payload.displayName || result.displayName || fallbackUpdated.displayName,
+      headline: payload.headline ?? result.headline ?? fallbackUpdated.headline,
+      bio: payload.bio ?? result.bio ?? fallbackUpdated.bio,
+      country: payload.country ?? result.country ?? fallbackUpdated.country,
+      skills: payload.skills ?? result.skills ?? fallbackUpdated.skills,
+    };
+    const nextProfiles = localProfiles.map((p) =>
+      p.id === fallbackBase.id || p.username === fallbackBase.username ? merged : p
+    );
+    writeLocalStore(STORE_KEYS.profiles, nextProfiles);
+    return merged;
   },
 
   async upgradeToSeller(
@@ -2167,15 +2276,34 @@ export const fiverrApi = {
       skills: payload?.skills || ["Spring Boot", "Next.js", "Kubernetes", "DDD"],
       hourlyRate: payload?.hourlyRate ?? 150.0,
     };
-    const sellers = await this.getSellers();
-    return fetchWithFallback<UserProfileDto>(
+    const localProfiles = getStoredProfiles();
+    const fallbackBase =
+      localProfiles.find(
+        (p) =>
+          p.id === uuid ||
+          resolveCanonicalUsername(p.username) === resolveCanonicalUsername(session.account.username)
+      ) || localProfiles[0];
+    const upgradedFallback: UserProfileDto = {
+      ...fallbackBase,
+      seller: true,
+      headline: body.headline,
+      bio: body.bio,
+      skills: body.skills,
+      hourlyRate: body.hourlyRate,
+    };
+    const result = await fetchWithFallback<UserProfileDto>(
       `/profiles/${uuid}/upgrade-seller`,
-      sellers[0],
+      upgradedFallback,
       {
         method: "POST",
         body: JSON.stringify(body),
       }
     );
+    const nextProfiles = localProfiles.map((p) =>
+      p.id === fallbackBase.id ? { ...p, ...result, seller: true } : p
+    );
+    writeLocalStore(STORE_KEYS.profiles, nextProfiles);
+    return result;
   },
 
   // 3. Gig Catalog Service (/api/v1/gigs)
@@ -2184,17 +2312,20 @@ export const fiverrApi = {
     search?: string;
     maxPrice?: number;
   }): Promise<Gig[]> {
+    const localGigs = getStoredGigs();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawList = await fetchWithFallback<any[]>("/gigs", SEED_GIGS);
+    const rawList = await fetchWithFallback<any[]>("/gigs", localGigs);
     const mappedBackendGigs = Array.isArray(rawList)
       ? rawList.map((item) => mapBackendGigToUi(item))
       : [];
 
-    // Merge live backend PostgreSQL gigs with rich SEED_GIGS catalog so all 6+ cards & routes work
-    const seenTitles = new Set(mappedBackendGigs.map((g) => g.title.toLowerCase()));
+    const seenIds = new Set(localGigs.map((g) => g.id));
+    const seenTitles = new Set(localGigs.map((g) => g.title.toLowerCase()));
     const combined: Gig[] = [
-      ...mappedBackendGigs,
-      ...SEED_GIGS.filter((seed) => !seenTitles.has(seed.title.toLowerCase())),
+      ...localGigs,
+      ...mappedBackendGigs.filter(
+        (bg) => !seenIds.has(bg.id) && !seenTitles.has(bg.title.toLowerCase())
+      ),
     ];
 
     return combined.filter((g) => {
@@ -2220,28 +2351,45 @@ export const fiverrApi = {
   },
 
   async searchGigs(keyword = "", category = ""): Promise<Gig[]> {
+    const localGigs = getStoredGigs();
     const query = new URLSearchParams();
     if (keyword) query.set("keyword", keyword);
     if (category && category !== "All Categories") query.set("category", category);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawList = await fetchWithFallback<any[]>(
       `/gigs/search?${query.toString()}`,
-      SEED_GIGS
+      localGigs
     );
-    const mapped = Array.isArray(rawList) ? rawList.map(mapBackendGigToUi) : SEED_GIGS;
-    return mapped;
+    const mapped = Array.isArray(rawList) ? rawList.map(mapBackendGigToUi) : localGigs;
+    return mapped.filter((g) => {
+      if (category && category !== "All Categories" && g.category !== category) return false;
+      if (keyword.trim()) {
+        const q = keyword.toLowerCase();
+        return (
+          g.title.toLowerCase().includes(q) ||
+          g.category.toLowerCase().includes(q) ||
+          g.tags.some((t) => t.toLowerCase().includes(q)) ||
+          g.seller.displayName.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
   },
 
-  async getGigById(id: string): Promise<Gig> {
-    const seedMatch = SEED_GIGS.find((g) => g.id === id);
-    const uuid = resolveBackendUuid(id, "11111111-1111-1111-1111-111111111111");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await fetchWithFallback<any>(`/gigs/${uuid}`, seedMatch || SEED_GIGS[0]);
-    const mapped = mapBackendGigToUi(raw);
-    if (seedMatch && !UUID_REGEX.test(id)) {
-      return seedMatch;
+  async getGigById(id: string): Promise<Gig | null> {
+    const localGigs = getStoredGigs();
+    const localMatch = localGigs.find((g) => g.id === id);
+    if (localMatch && !UUID_REGEX.test(id)) {
+      return localMatch;
     }
-    return mapped;
+    const uuid = resolveBackendUuid(id, "");
+    if (!uuid) {
+      return localMatch || null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await fetchWithFallback<any | null>(`/gigs/${uuid}`, localMatch || null);
+    if (!raw) return null;
+    return mapBackendGigToUi(raw);
   },
 
   async createGig(payload: {
@@ -2252,6 +2400,8 @@ export const fiverrApi = {
     basicPrice: number;
     standardPrice: number;
     premiumPrice: number;
+    deliveryDays?: number;
+    tags?: string[];
   }): Promise<Gig> {
     const session = getAuthSession();
     const sellerId = resolveBackendUuid(
@@ -2261,6 +2411,7 @@ export const fiverrApi = {
     const formattedTitle = payload.title.startsWith("I will")
       ? payload.title
       : `I will ${payload.title}`;
+    const baseDelivery = Math.max(1, Number(payload.deliveryDays) || 3);
     const body = {
       sellerId,
       title:
@@ -2269,7 +2420,7 @@ export const fiverrApi = {
           : `${formattedTitle} with Enterprise Quality`,
       category: payload.category,
       description:
-        payload.description ||
+        payload.description?.trim() ||
         "Production-grade architecture and implementation delivered with full test coverage, documentation, and Escrow milestone protection.",
       packages: [
         {
@@ -2277,7 +2428,7 @@ export const fiverrApi = {
           name: "Core Deliverable Package",
           description: "Essential foundation implementation with clean architecture and documentation.",
           price: payload.basicPrice,
-          deliveryDays: 3,
+          deliveryDays: baseDelivery,
           revisions: 2,
         },
         {
@@ -2285,7 +2436,7 @@ export const fiverrApi = {
           name: "Full Production Suite",
           description: "Complete multi-module implementation with integration tests and Docker support.",
           price: payload.standardPrice,
-          deliveryDays: 5,
+          deliveryDays: baseDelivery + 2,
           revisions: 5,
         },
         {
@@ -2293,22 +2444,55 @@ export const fiverrApi = {
           name: "Enterprise Cloud Ecosystem",
           description: "End-to-end production system with Kubernetes Helm charts and priority SLA.",
           price: payload.premiumPrice,
-          deliveryDays: 10,
+          deliveryDays: baseDelivery + 6,
           revisions: 10,
         },
       ],
     };
 
+    const slug = body.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
     const fallbackGig: Gig = {
       ...SEED_GIGS[0],
       id: `gig-${Date.now()}`,
+      slug: slug || `gig-${Date.now()}`,
       title: body.title,
       category: payload.category,
+      description: body.description,
       startingPrice: payload.basicPrice,
+      rating: 5.0,
+      reviewCount: 0,
+      ordersInQueue: 0,
+      tags:
+        payload.tags && payload.tags.length > 0
+          ? payload.tags
+          : [payload.category.split(" ")[0], "Escrow Verified", "Production"],
+      seller: {
+        ...SEED_GIGS[0].seller,
+        id: sellerId,
+        username: session.account.username,
+        displayName: session.displayName,
+        avatarUrl: session.avatarUrl,
+      },
+      reviews: [],
       packages: {
-        Basic: { ...SEED_GIGS[0].packages.Basic, price: payload.basicPrice },
-        Standard: { ...SEED_GIGS[0].packages.Standard, price: payload.standardPrice },
-        Premium: { ...SEED_GIGS[0].packages.Premium, price: payload.premiumPrice },
+        Basic: {
+          ...SEED_GIGS[0].packages.Basic,
+          price: payload.basicPrice,
+          deliveryDays: baseDelivery,
+        },
+        Standard: {
+          ...SEED_GIGS[0].packages.Standard,
+          price: payload.standardPrice,
+          deliveryDays: baseDelivery + 2,
+        },
+        Premium: {
+          ...SEED_GIGS[0].packages.Premium,
+          price: payload.premiumPrice,
+          deliveryDays: baseDelivery + 6,
+        },
       },
     };
 
@@ -2317,42 +2501,108 @@ export const fiverrApi = {
       method: "POST",
       body: JSON.stringify(body),
     });
-    return mapBackendGigToUi(raw);
+    const created = raw?.id && raw.packages?.Basic ? (raw as Gig) : mapBackendGigToUi(raw);
+    const currentGigs = getStoredGigs();
+    writeLocalStore(STORE_KEYS.gigs, [created, ...currentGigs.filter((g) => g.id !== created.id)]);
+    return created;
+  },
+
+  async updateGig(
+    gigId: string,
+    updates: {
+      title?: string;
+      category?: string;
+      description?: string;
+      basicPrice?: number;
+      standardPrice?: number;
+      premiumPrice?: number;
+    }
+  ): Promise<Gig | null> {
+    const currentGigs = getStoredGigs();
+    const target = currentGigs.find((g) => g.id === gigId);
+    if (!target) return null;
+
+    const updated: Gig = {
+      ...target,
+      title: updates.title?.trim() || target.title,
+      category: updates.category || target.category,
+      description: updates.description?.trim() || target.description,
+      startingPrice: updates.basicPrice ?? target.startingPrice,
+      packages: {
+        Basic: {
+          ...target.packages.Basic,
+          price: updates.basicPrice ?? target.packages.Basic.price,
+        },
+        Standard: {
+          ...target.packages.Standard,
+          price: updates.standardPrice ?? target.packages.Standard.price,
+        },
+        Premium: {
+          ...target.packages.Premium,
+          price: updates.premiumPrice ?? target.packages.Premium.price,
+        },
+      },
+    };
+    writeLocalStore(
+      STORE_KEYS.gigs,
+      currentGigs.map((g) => (g.id === gigId ? updated : g))
+    );
+    return updated;
+  },
+
+  async deleteGig(gigId: string): Promise<boolean> {
+    const currentGigs = getStoredGigs();
+    const next = currentGigs.filter((g) => g.id !== gigId);
+    if (next.length === currentGigs.length) return false;
+    writeLocalStore(STORE_KEYS.gigs, next);
+    return true;
   },
 
   // 4. Orders & Escrow Lifecycle (/api/v1/orders)
   async getOrders(): Promise<Order[]> {
+    const localOrders = getStoredOrders();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawList = await fetchWithFallback<any[]>("/orders", SEED_ORDERS);
+    const rawList = await fetchWithFallback<any[]>("/orders", localOrders);
     if (!Array.isArray(rawList) || rawList.length === 0) {
-      return SEED_ORDERS;
+      return localOrders;
     }
-    return rawList.map(mapBackendOrderToUi);
+    return rawList.map((o) => (o.orderNumber && o.gigTitle ? (o as Order) : mapBackendOrderToUi(o)));
   },
 
   async getOrderById(orderId: string): Promise<Order> {
+    const localOrders = getStoredOrders();
     const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
-    const fallback = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const fallback =
+      localOrders.find((o) => o.id === orderId || o.id === uuid) || localOrders[0] || SEED_ORDERS[0];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await fetchWithFallback<any>(`/orders/${uuid}`, fallback);
-    return mapBackendOrderToUi(raw);
+    return raw.orderNumber && raw.gigTitle ? (raw as Order) : mapBackendOrderToUi(raw);
   },
 
   async createOrder(payload: {
     gigId: string;
+    gigTitle?: string;
+    gigThumbnail?: string;
+    sellerName?: string;
+    sellerUsername?: string;
+    sellerLevel?: SellerLevel;
     packageTier: PackageTierName;
     requirements: string;
     amount?: number;
+    deliveryDays?: number;
     sellerId?: string;
   }): Promise<Order> {
     const session = getAuthSession();
+    const allGigs = getStoredGigs();
     const gig =
-      SEED_GIGS.find((g) => g.id === payload.gigId) ||
-      SEED_GIGS.find((g) => GIG_ID_TO_UUID[g.id] === payload.gigId) ||
+      allGigs.find((g) => g.id === payload.gigId) ||
+      allGigs.find((g) => GIG_ID_TO_UUID[g.id] === payload.gigId) ||
+      allGigs[0] ||
       SEED_GIGS[0];
     const pkg = gig.packages[payload.packageTier] || gig.packages.Standard;
     const price = payload.amount ?? pkg.price;
     const serviceFee = Number((price * 0.055).toFixed(2));
+    const deliveryDays = payload.deliveryDays ?? pkg.deliveryDays;
 
     const backendGigId = resolveBackendUuid(
       payload.gigId,
@@ -2370,20 +2620,20 @@ export const fiverrApi = {
     const fallbackOrder: Order = {
       id: `ord-${Date.now()}`,
       orderNumber: `#FO-${Math.floor(1000000 + Math.random() * 9000000)}`,
-      gigId: gig.id,
-      gigTitle: gig.title,
-      gigThumbnail: gig.thumbnailUrl,
+      gigId: payload.gigId || gig.id,
+      gigTitle: payload.gigTitle || gig.title,
+      gigThumbnail: payload.gigThumbnail || gig.thumbnailUrl,
       packageTier: payload.packageTier,
       buyerName: session.displayName || "Jordan Taylor",
       buyerUsername: session.account.username || "jordan_taylor",
-      sellerName: gig.seller.displayName,
-      sellerUsername: gig.seller.username,
-      sellerLevel: gig.seller.level,
+      sellerName: payload.sellerName || gig.seller.displayName,
+      sellerUsername: payload.sellerUsername || gig.seller.username,
+      sellerLevel: payload.sellerLevel || gig.seller.level,
       amount: price,
       serviceFee,
       totalEscrow: Number((price + serviceFee).toFixed(2)),
       status: "IN_PROGRESS",
-      dueDate: new Date(Date.now() + pkg.deliveryDays * 86400000).toISOString(),
+      dueDate: new Date(Date.now() + deliveryDays * 86400000).toISOString(),
       createdAt: new Date().toISOString(),
       revisionsUsed: 0,
       revisionsAllowed: pkg.revisions,
@@ -2409,15 +2659,24 @@ export const fiverrApi = {
       method: "POST",
       body: JSON.stringify(requestBody),
     });
-    return mapBackendOrderToUi(raw);
+    const created: Order =
+      raw.orderNumber && raw.gigTitle ? (raw as Order) : mapBackendOrderToUi(raw);
+    const currentOrders = getStoredOrders();
+    writeLocalStore(STORE_KEYS.orders, [
+      created,
+      ...currentOrders.filter((o) => o.id !== created.id),
+    ]);
+    return created;
   },
 
   async deliverOrder(
     orderId: string,
     payload: { sellerId?: string; deliveryNote: string; deliverableUrl?: string }
   ): Promise<Order> {
+    const localOrders = getStoredOrders();
     const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
-    const existing = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const existing =
+      localOrders.find((o) => o.id === orderId || o.id === uuid) || SEED_ORDERS[0];
     const body = {
       sellerId: resolveBackendUuid(
         payload.sellerId || existing.sellerId,
@@ -2429,7 +2688,7 @@ export const fiverrApi = {
     };
     const fallback: Order = {
       ...existing,
-      id: orderId,
+      id: existing.id,
       status: "DELIVERED",
       deliveryNote: payload.deliveryNote,
       deliveredAt: new Date().toISOString(),
@@ -2439,15 +2698,25 @@ export const fiverrApi = {
       method: "POST",
       body: JSON.stringify(body),
     });
-    return mapBackendOrderToUi(raw);
+    const updated: Order =
+      raw.orderNumber && raw.gigTitle
+        ? { ...existing, ...(raw as Order), deliveryNote: payload.deliveryNote }
+        : { ...fallback, status: mapBackendOrderToUi(raw).status || "DELIVERED" };
+    writeLocalStore(
+      STORE_KEYS.orders,
+      localOrders.map((o) => (o.id === existing.id ? updated : o))
+    );
+    return updated;
   },
 
   async requestRevision(
     orderId: string,
     payload: { buyerId?: string; reason: string }
   ): Promise<Order> {
+    const localOrders = getStoredOrders();
     const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
-    const existing = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const existing =
+      localOrders.find((o) => o.id === orderId || o.id === uuid) || SEED_ORDERS[0];
     const body = {
       buyerId: resolveBackendUuid(
         payload.buyerId || existing.buyerId,
@@ -2457,21 +2726,32 @@ export const fiverrApi = {
     };
     const fallback: Order = {
       ...existing,
-      id: orderId,
+      id: existing.id,
       status: "REVISION_REQUESTED",
       revisionsUsed: existing.revisionsUsed + 1,
+      requirements: `${existing.requirements}\n[Revision Request]: ${payload.reason}`,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = await fetchWithFallback<any>(`/orders/${uuid}/revisions`, fallback, {
       method: "POST",
       body: JSON.stringify(body),
     });
-    return mapBackendOrderToUi(raw);
+    const updated: Order =
+      raw.orderNumber && raw.gigTitle
+        ? { ...fallback, status: (raw as Order).status || "REVISION_REQUESTED" }
+        : { ...fallback, status: mapBackendOrderToUi(raw).status || "REVISION_REQUESTED" };
+    writeLocalStore(
+      STORE_KEYS.orders,
+      localOrders.map((o) => (o.id === existing.id ? updated : o))
+    );
+    return updated;
   },
 
   async completeOrder(orderId: string, buyerId?: string): Promise<Order> {
+    const localOrders = getStoredOrders();
     const uuid = resolveBackendUuid(orderId, "44444444-4444-4444-4444-444444444444");
-    const existing = SEED_ORDERS.find((o) => o.id === uuid) || SEED_ORDERS[0];
+    const existing =
+      localOrders.find((o) => o.id === orderId || o.id === uuid) || SEED_ORDERS[0];
     const body = {
       buyerId: resolveBackendUuid(
         buyerId || existing.buyerId,
@@ -2480,7 +2760,7 @@ export const fiverrApi = {
     };
     const fallback: Order = {
       ...existing,
-      id: orderId,
+      id: existing.id,
       status: "COMPLETED",
       completedAt: new Date().toISOString(),
     };
@@ -2489,15 +2769,43 @@ export const fiverrApi = {
       method: "POST",
       body: JSON.stringify(body),
     });
-    return mapBackendOrderToUi(raw);
+    const updated: Order =
+      raw.orderNumber && raw.gigTitle
+        ? { ...fallback, status: (raw as Order).status || "COMPLETED" }
+        : { ...fallback, status: mapBackendOrderToUi(raw).status || "COMPLETED" };
+    writeLocalStore(
+      STORE_KEYS.orders,
+      localOrders.map((o) => (o.id === existing.id ? updated : o))
+    );
+    return updated;
+  },
+
+  async cancelOrder(orderId: string): Promise<Order | null> {
+    const localOrders = getStoredOrders();
+    const existing = localOrders.find((o) => o.id === orderId);
+    if (!existing) return null;
+    const updated: Order = {
+      ...existing,
+      status: "CANCELLED",
+    };
+    writeLocalStore(
+      STORE_KEYS.orders,
+      localOrders.map((o) => (o.id === orderId ? updated : o))
+    );
+    const escrows = getStoredEscrows();
+    writeLocalStore(
+      STORE_KEYS.escrows,
+      escrows.map((e) =>
+        e.orderId === orderId ? { ...e, status: "REFUNDED", updatedAt: new Date().toISOString() } : e
+      )
+    );
+    return updated;
   },
 
   // 5. Payment & Escrow Wallet Service (/api/v1/payments)
   async getEscrowTransactions(): Promise<EscrowTransactionItem[]> {
-    return fetchWithFallback<EscrowTransactionItem[]>(
-      "/payments/escrow",
-      SEED_ESCROW_TRANSACTIONS
-    );
+    const localEscrows = getStoredEscrows();
+    return fetchWithFallback<EscrowTransactionItem[]>("/payments/escrow", localEscrows);
   },
 
   async holdEscrow(payload: {
@@ -2522,7 +2830,7 @@ export const fiverrApi = {
     );
     const fallback: EscrowTransactionItem = {
       id: `escrow-${Date.now()}`,
-      orderId: orderUuid,
+      orderId: payload.orderId || orderUuid,
       buyerId: buyerUuid,
       sellerId: sellerUuid,
       grossAmount: payload.grossAmount,
@@ -2533,7 +2841,7 @@ export const fiverrApi = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    return fetchWithFallback<EscrowTransactionItem>("/payments/escrow/hold", fallback, {
+    const result = await fetchWithFallback<EscrowTransactionItem>("/payments/escrow/hold", fallback, {
       method: "POST",
       body: JSON.stringify({
         orderId: orderUuid,
@@ -2543,20 +2851,46 @@ export const fiverrApi = {
         paymentMethodToken: payload.paymentMethodToken || "tok_fiverrex_visa_4242",
       }),
     });
+    const storedEscrow: EscrowTransactionItem = {
+      ...result,
+      orderId: payload.orderId || result.orderId,
+    };
+    const currentEscrows = getStoredEscrows();
+    writeLocalStore(STORE_KEYS.escrows, [
+      storedEscrow,
+      ...currentEscrows.filter((e) => e.orderId !== storedEscrow.orderId),
+    ]);
+    return storedEscrow;
   },
 
   async releaseEscrow(orderId: string): Promise<EscrowTransactionItem> {
+    const localEscrows = getStoredEscrows();
+    const localOrders = getStoredOrders();
     const orderUuid = resolveBackendUuid(
       orderId,
       "44444444-4444-4444-4444-444444444444"
     );
+    const existingEscrow = localEscrows.find(
+      (e) => e.orderId === orderId || e.orderId === orderUuid
+    );
+    const matchedOrder = localOrders.find((o) => o.id === orderId || o.id === orderUuid);
+    const grossAmount = existingEscrow?.grossAmount ?? matchedOrder?.amount ?? 490;
+    const netPayout = existingEscrow?.sellerNetPayout ?? Number((grossAmount * 0.8).toFixed(2));
+    const sellerId =
+      existingEscrow?.sellerId ?? matchedOrder?.sellerId ?? "11111111-1111-1111-1111-111111111111";
+
     const fallback: EscrowTransactionItem = {
-      ...SEED_ESCROW_TRANSACTIONS[0],
-      orderId: orderUuid,
+      ...(existingEscrow || SEED_ESCROW_TRANSACTIONS[0]),
+      id: existingEscrow?.id || `escrow-${Date.now()}`,
+      orderId,
+      sellerId,
+      grossAmount,
+      platformFee: Number((grossAmount * 0.2).toFixed(2)),
+      sellerNetPayout: netPayout,
       status: "RELEASED",
       updatedAt: new Date().toISOString(),
     };
-    return fetchWithFallback<EscrowTransactionItem>(
+    const result = await fetchWithFallback<EscrowTransactionItem>(
       "/payments/escrow/release",
       fallback,
       {
@@ -2564,20 +2898,52 @@ export const fiverrApi = {
         body: JSON.stringify({ orderId: orderUuid }),
       }
     );
+
+    const alreadyReleased = existingEscrow?.status === "RELEASED";
+    const nextEscrows = existingEscrow
+      ? localEscrows.map((e) =>
+          e.orderId === existingEscrow.orderId ? { ...e, status: "RELEASED", updatedAt: new Date().toISOString() } : e
+        )
+      : [fallback, ...localEscrows];
+    writeLocalStore(STORE_KEYS.escrows, nextEscrows);
+
+    if (!alreadyReleased) {
+      const wallets = getStoredWallets();
+      const targetIdx = wallets.findIndex((w) => w.sellerId === sellerId);
+      const nextWallets = [...wallets];
+      if (targetIdx >= 0) {
+        nextWallets[targetIdx] = {
+          ...nextWallets[targetIdx],
+          availableBalance: Number((Number(nextWallets[targetIdx].availableBalance) + netPayout).toFixed(2)),
+          updatedAt: new Date().toISOString(),
+        };
+      } else if (nextWallets.length > 0) {
+        nextWallets[0] = {
+          ...nextWallets[0],
+          availableBalance: Number((Number(nextWallets[0].availableBalance) + netPayout).toFixed(2)),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      writeLocalStore(STORE_KEYS.wallets, nextWallets);
+    }
+
+    return { ...fallback, status: result.status || "RELEASED" };
   },
 
   async getWallets(): Promise<SellerWalletItem[]> {
-    return fetchWithFallback<SellerWalletItem[]>("/payments/wallets", SEED_WALLETS);
+    const localWallets = getStoredWallets();
+    return fetchWithFallback<SellerWalletItem[]>("/payments/wallets", localWallets);
   },
 
   async getSellerWallet(sellerId?: string): Promise<SellerWalletItem> {
     const session = getAuthSession();
+    const localWallets = getStoredWallets();
     const uuid = resolveBackendUuid(
       sellerId || session.sellerId,
       "11111111-1111-1111-1111-111111111111"
     );
     const fallback =
-      SEED_WALLETS.find((w) => w.sellerId === uuid) || SEED_WALLETS[0];
+      localWallets.find((w) => w.sellerId === uuid) || localWallets[0] || SEED_WALLETS[0];
     return fetchWithFallback<SellerWalletItem>(`/payments/wallets/${uuid}`, fallback);
   },
 
@@ -2587,25 +2953,59 @@ export const fiverrApi = {
     payoutDestination?: string;
   }): Promise<SellerWalletItem> {
     const session = getAuthSession();
+    const localWallets = getStoredWallets();
     const sellerUuid = resolveBackendUuid(
       payload.sellerId || session.sellerId,
       "11111111-1111-1111-1111-111111111111"
     );
+    const matchedWallet =
+      localWallets.find((w) => w.sellerId === sellerUuid) || localWallets[0] || SEED_WALLETS[0];
+    const withdrawAmt = Math.min(Number(payload.amount) || 0, Number(matchedWallet.availableBalance || 0));
+    const remaining = Number(Math.max(0, Number(matchedWallet.availableBalance || 0) - withdrawAmt).toFixed(2));
+    const newWithdrawnTotal = Number((Number(matchedWallet.withdrawnTotal || 0) + withdrawAmt).toFixed(2));
+    const destination = payload.payoutDestination || "stripe_Express_Acct_FIVERREX";
+
     const fallback: SellerWalletItem = {
-      sellerId: sellerUuid,
-      availableBalance: 0,
-      withdrawnTotal: payload.amount + 800,
-      createdAt: new Date().toISOString(),
+      ...matchedWallet,
+      availableBalance: remaining,
+      withdrawnTotal: newWithdrawnTotal,
       updatedAt: new Date().toISOString(),
     };
-    return fetchWithFallback<SellerWalletItem>("/payments/wallets/withdraw", fallback, {
+    const result = await fetchWithFallback<SellerWalletItem>("/payments/wallets/withdraw", fallback, {
       method: "POST",
       body: JSON.stringify({
         sellerId: sellerUuid,
-        amount: payload.amount,
-        payoutDestination: payload.payoutDestination || "stripe_Express_Acct_FIVERREX",
+        amount: withdrawAmt,
+        payoutDestination: destination,
       }),
     });
+
+    const nextWallets = localWallets.map((w) =>
+      w.sellerId === matchedWallet.sellerId
+        ? {
+            ...w,
+            availableBalance: Number(result.availableBalance ?? remaining),
+            withdrawnTotal: Number(result.withdrawnTotal ?? newWithdrawnTotal),
+            updatedAt: new Date().toISOString(),
+          }
+        : w
+    );
+    writeLocalStore(STORE_KEYS.wallets, nextWallets);
+
+    if (withdrawAmt > 0) {
+      const withdrawals = getStoredWithdrawals();
+      const record: WithdrawalRecord = {
+        id: `wd-${Date.now()}`,
+        sellerId: matchedWallet.sellerId,
+        amount: withdrawAmt,
+        payoutDestination: destination,
+        status: "COMPLETED",
+        createdAt: new Date().toISOString(),
+      };
+      writeLocalStore(STORE_KEYS.withdrawals, [record, ...withdrawals]);
+    }
+
+    return result;
   },
 
   async getSellerDashboard(): Promise<SellerDashboardStats> {
@@ -2630,51 +3030,53 @@ export const fiverrApi = {
       availableForWithdrawal: primaryWallet
         ? Number(primaryWallet.availableBalance)
         : SEED_SELLER_STATS.availableForWithdrawal,
-      escrowPendingBalance: pendingEscrow || SEED_SELLER_STATS.escrowPendingBalance,
+      escrowPendingBalance: pendingEscrow,
       clearedThisMonth:
         (clearedEscrow || 0) +
         (primaryWallet ? Number(primaryWallet.withdrawnTotal || 0) : 0) ||
         SEED_SELLER_STATS.clearedThisMonth,
-      activeOrdersCount: activeOrders.length || SEED_SELLER_STATS.activeOrdersCount,
-      activeOrdersValue:
-        activeOrders.reduce((s, o) => s + o.totalEscrow, 0) ||
-        SEED_SELLER_STATS.activeOrdersValue,
+      activeOrdersCount: activeOrders.length,
+      activeOrdersValue: activeOrders.reduce((s, o) => s + o.totalEscrow, 0),
     };
   },
 
   // 6. Messaging & Chat Service (/api/v1/messages)
   async getAllMessages(): Promise<MessageItem[]> {
+    const localConvs = getStoredConversations();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawList = await fetchWithFallback<any[]>(
       "/messages",
-      SEED_CONVERSATIONS[0].messages
+      localConvs[0]?.messages || SEED_CONVERSATIONS[0].messages
     );
     return Array.isArray(rawList) ? rawList.map(mapBackendMessageToUi) : [];
   },
 
   async getConversationMessages(conversationId: string): Promise<MessageItem[]> {
-    if (!UUID_REGEX.test(conversationId)) {
-      const found = SEED_CONVERSATIONS.find((c) => c.id === conversationId);
-      return found ? found.messages : SEED_CONVERSATIONS[0].messages;
+    const localConvs = getStoredConversations();
+    const localFound = localConvs.find((c) => c.id === conversationId);
+    if (localFound && !UUID_REGEX.test(conversationId)) {
+      return localFound.messages;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawList = await fetchWithFallback<any[]>(
       `/messages/conversations/${conversationId}`,
-      SEED_CONVERSATIONS[0].messages
+      localFound ? localFound.messages : SEED_CONVERSATIONS[0].messages
     );
-    return Array.isArray(rawList) && rawList.length > 0
-      ? rawList.map(mapBackendMessageToUi)
-      : SEED_CONVERSATIONS[0].messages;
+    if (Array.isArray(rawList) && rawList.length > 0) {
+      return rawList.map((m) => (m.sender && m.text ? (m as MessageItem) : mapBackendMessageToUi(m)));
+    }
+    return localFound ? localFound.messages : SEED_CONVERSATIONS[0].messages;
   },
 
   async getConversations(): Promise<Conversation[]> {
+    const localConvs = getStoredConversations();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawConvs = await fetchWithFallback<any[]>(
       "/messages/conversations",
-      SEED_CONVERSATIONS
+      localConvs
     );
     if (!Array.isArray(rawConvs) || rawConvs.length === 0) {
-      return SEED_CONVERSATIONS;
+      return localConvs;
     }
 
     const mappedConvs = await Promise.all(
@@ -2690,14 +3092,100 @@ export const fiverrApi = {
     const existingIds = new Set(mappedConvs.map((c) => c.id));
     return [
       ...mappedConvs,
-      ...SEED_CONVERSATIONS.filter((sc) => !existingIds.has(sc.id)),
+      ...localConvs.filter((sc) => !existingIds.has(sc.id)),
     ];
+  },
+
+  openOrCreateConversation(params: {
+    sellerUsername: string;
+    gigId?: string;
+    gigTitle?: string;
+  }): Conversation {
+    const canonical = resolveCanonicalUsername(params.sellerUsername);
+    const current = getStoredConversations();
+    const existing = current.find(
+      (c) => resolveCanonicalUsername(c.participantUsername) === canonical
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const profiles = getStoredProfiles();
+    const sellerProfile =
+      profiles.find((p) => resolveCanonicalUsername(p.username) === canonical) || profiles[0];
+    const allGigs = getStoredGigs();
+    const matchedGig =
+      (params.gigId ? allGigs.find((g) => g.id === params.gigId) : undefined) ||
+      allGigs.find((g) => resolveCanonicalUsername(g.seller.username) === canonical);
+
+    const session = getAuthSession();
+    const gigTitle =
+      params.gigTitle ||
+      matchedGig?.title ||
+      sellerProfile?.headline ||
+      "Custom Freelance Project Inquiry";
+
+    const newConv: Conversation = {
+      id: `conv-${canonical}-${Date.now()}`,
+      participantName: sellerProfile?.displayName || params.sellerUsername,
+      participantUsername: sellerProfile?.username || params.sellerUsername,
+      participantAvatar:
+        sellerProfile?.avatarUrl ||
+        `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(params.sellerUsername)}&backgroundColor=1dbf73`,
+      participantRole: "Seller",
+      participantLevel: (sellerProfile?.sellerLevel as SellerLevel | undefined) || "Pro Verified",
+      online: true,
+      relatedGigTitle: gigTitle,
+      lastMessage: `Started a conversation regarding "${gigTitle}"`,
+      lastMessageTime: "Just now",
+      unreadCount: 0,
+      buyerId: session.account.id,
+      sellerId: sellerProfile?.accountId || sellerProfile?.id,
+      gigId: matchedGig?.id || params.gigId,
+      messages: [
+        {
+          id: `msg-welcome-${Date.now()}`,
+          sender: "seller",
+          senderName: sellerProfile?.displayName || params.sellerUsername,
+          text: `Hi ${session.displayName || "there"}! Thanks for reaching out about "${gigTitle}". Share your architecture goals, timeline, or budget and I can put together a tailored Escrow milestone offer.`,
+          timestamp: "Just now",
+        },
+      ],
+    };
+
+    writeLocalStore(STORE_KEYS.conversations, [newConv, ...current]);
+    return newConv;
+  },
+
+  markConversationRead(conversationId: string): void {
+    const current = getStoredConversations();
+    const next = current.map((c) =>
+      c.id === conversationId ? { ...c, unreadCount: 0 } : c
+    );
+    writeLocalStore(STORE_KEYS.conversations, next);
+  },
+
+  acceptCustomOfferInThread(conversationId: string, messageId: string): void {
+    const current = getStoredConversations();
+    const next = current.map((conv) => {
+      if (conv.id !== conversationId) return conv;
+      return {
+        ...conv,
+        messages: conv.messages.map((m) =>
+          m.id === messageId && m.customOffer
+            ? { ...m, customOffer: { ...m.customOffer, status: "ACCEPTED" as const } }
+            : m
+        ),
+      };
+    });
+    writeLocalStore(STORE_KEYS.conversations, next);
   },
 
   async sendMessage(payload: {
     conversationId?: string;
     senderId?: string;
     recipientId?: string;
+    recipientUsername?: string;
     gigId?: string;
     content: string;
     messageType?: "TEXT" | "CUSTOM_OFFER";
@@ -2738,7 +3226,7 @@ export const fiverrApi = {
       attachmentUrls: [],
       customOffer: payload.customOffer
         ? {
-            offerId: "44444444-4444-4444-4444-444444444444",
+            offerId: `offer-${Date.now()}`,
             gigId: gigUuid,
             title: payload.customOffer.title,
             description:
@@ -2759,8 +3247,8 @@ export const fiverrApi = {
       timestamp: "Just now",
       customOffer: payload.customOffer
         ? {
-            offerId: "44444444-4444-4444-4444-444444444444",
-            gigId: gigUuid,
+            offerId: `offer-${Date.now()}`,
+            gigId: payload.gigId || gigUuid,
             title: payload.customOffer.title,
             packageTier: payload.customOffer.packageTier || "Standard",
             price: payload.customOffer.price,
@@ -2776,11 +3264,49 @@ export const fiverrApi = {
       method: "POST",
       body: JSON.stringify(body),
     });
-    const mapped = mapBackendMessageToUi(raw);
+    const mapped: MessageItem =
+      raw.sender && raw.text ? (raw as MessageItem) : mapBackendMessageToUi(raw);
     if (payload.customOffer && mapped.customOffer) {
       mapped.customOffer.packageTier = payload.customOffer.packageTier || "Standard";
       mapped.customOffer.revisions = payload.customOffer.revisions ?? 4;
     }
+
+    // Persist into conversation thread in localStorage
+    let currentConvs = getStoredConversations();
+    let targetConv = payload.conversationId
+      ? currentConvs.find((c) => c.id === payload.conversationId)
+      : undefined;
+    if (!targetConv && payload.recipientUsername) {
+      targetConv = this.openOrCreateConversation({
+        sellerUsername: payload.recipientUsername,
+        gigId: payload.gigId,
+      });
+      currentConvs = getStoredConversations();
+    }
+    if (!targetConv) {
+      targetConv = currentConvs[0];
+    }
+
+    if (targetConv) {
+      const persistedMsg: MessageItem =
+        payload.messageType === "CUSTOM_OFFER"
+          ? { ...mapped, sender: "seller", senderName: targetConv.participantName }
+          : mapped;
+      const updatedConvs = currentConvs.map((c) =>
+        c.id === targetConv!.id
+          ? {
+              ...c,
+              lastMessage: payload.content,
+              lastMessageTime: "Just now",
+              unreadCount: 0,
+              messages: [...c.messages, persistedMsg],
+            }
+          : c
+      );
+      writeLocalStore(STORE_KEYS.conversations, updatedConvs);
+      return persistedMsg;
+    }
+
     return mapped;
   },
 
@@ -2793,15 +3319,27 @@ export const fiverrApi = {
 
   async getGigReviews(gigId: string): Promise<ReviewItem[]> {
     const uuid = resolveBackendUuid(gigId, "33333333-3333-3333-3333-333333333333");
-    const seedGig = SEED_GIGS.find((g) => g.id === gigId) || SEED_GIGS[0];
+    const storedGigs = getStoredGigs();
+    const matchedGig = storedGigs.find((g) => g.id === gigId) || SEED_GIGS.find((g) => g.id === gigId);
+    const baseReviews = matchedGig?.reviews || [];
+    const storedExtra = getStoredReviewsMap()[gigId] || [];
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawList = await fetchWithFallback<any[]>(
       `/reviews/gig/${uuid}`,
-      seedGig.reviews
+      []
     );
     const mapped = Array.isArray(rawList) ? rawList.map(mapBackendReviewToUi) : [];
-    const seenIds = new Set(mapped.map((r) => r.id));
-    return [...mapped, ...seedGig.reviews.filter((sr) => !seenIds.has(sr.id))];
+
+    const combined: ReviewItem[] = [];
+    const seenIds = new Set<string>();
+    for (const r of [...storedExtra, ...mapped, ...baseReviews]) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        combined.push(r);
+      }
+    }
+    return combined;
   },
 
   async submitReview(payload: {
@@ -2815,7 +3353,6 @@ export const fiverrApi = {
     comment: string;
   }): Promise<ReviewItem> {
     const session = getAuthSession();
-    // Generate a deterministic unique UUID for orderId so unique constraint on orderId in review DB succeeds
     const randomHex = Math.floor(100000000000 + Math.random() * 899999999999).toString(16).slice(0, 12);
     const uniqueOrderUuid =
       payload.orderId && UUID_REGEX.test(payload.orderId)
@@ -2872,12 +3409,32 @@ export const fiverrApi = {
         comment: payload.comment,
       }),
     });
-    return mapBackendReviewToUi(raw);
+    const saved: ReviewItem =
+      raw.buyerName && raw.comment ? (raw as ReviewItem) : mapBackendReviewToUi(raw);
+
+    const reviewsMap = getStoredReviewsMap();
+    const existingForGig = reviewsMap[payload.gigId] || [];
+    writeLocalStore(STORE_KEYS.reviews, {
+      ...reviewsMap,
+      [payload.gigId]: [saved, ...existingForGig.filter((r) => r.id !== saved.id)],
+    });
+
+    // Update cached gig reviewCount & rating
+    const currentGigs = getStoredGigs();
+    const nextGigs = currentGigs.map((g) => {
+      if (g.id !== payload.gigId) return g;
+      const nextCount = g.reviewCount + 1;
+      const nextRating = Number(((g.rating * g.reviewCount + saved.ratingOverall) / nextCount).toFixed(2));
+      return { ...g, reviewCount: nextCount, rating: Math.min(5, nextRating) };
+    });
+    writeLocalStore(STORE_KEYS.gigs, nextGigs);
+
+    return saved;
   },
 
   async addSellerResponse(
     reviewId: string,
-    payload: string | { sellerId?: string; sellerResponse: string }
+    payload: string | { sellerId?: string; sellerResponse: string; gigId?: string }
   ): Promise<ReviewItem> {
     const responseText =
       typeof payload === "string" ? payload : payload.sellerResponse;
@@ -2900,26 +3457,52 @@ export const fiverrApi = {
         }),
       }
     );
-    const mapped = mapBackendReviewToUi(raw);
-    return {
+    const mapped = raw.buyerName ? (raw as ReviewItem) : mapBackendReviewToUi(raw);
+    const updatedReview: ReviewItem = {
       ...mapped,
+      id: reviewId,
       sellerResponse: mapped.sellerResponse || responseText,
     };
+
+    // Persist seller reply in stored reviews map & stored gig reviews
+    const reviewsMap = getStoredReviewsMap();
+    const nextMap: Record<string, ReviewItem[]> = {};
+    for (const [gId, list] of Object.entries(reviewsMap)) {
+      nextMap[gId] = list.map((r) =>
+        r.id === reviewId ? { ...r, sellerResponse: responseText } : r
+      );
+    }
+    writeLocalStore(STORE_KEYS.reviews, nextMap);
+
+    const currentGigs = getStoredGigs();
+    writeLocalStore(
+      STORE_KEYS.gigs,
+      currentGigs.map((g) => ({
+        ...g,
+        reviews: (g.reviews || []).map((r) =>
+          r.id === reviewId ? { ...r, sellerResponse: responseText } : r
+        ),
+      }))
+    );
+
+    return updatedReview;
   },
 
   // 8. Multi-Channel Notification Service (/api/v1/notifications)
   async getNotifications(): Promise<NotificationItem[]> {
-    return fetchWithFallback<NotificationItem[]>("/notifications", SEED_NOTIFICATIONS);
+    const localNotifs = getStoredNotifications();
+    return fetchWithFallback<NotificationItem[]>("/notifications", localNotifs);
   },
 
   async getUserNotifications(recipientUserId?: string): Promise<NotificationItem[]> {
+    const localNotifs = getStoredNotifications();
     const uuid = resolveBackendUuid(
       recipientUserId || getAuthSession().account.id,
       "11111111-1111-1111-1111-111111111111"
     );
     return fetchWithFallback<NotificationItem[]>(
       `/notifications/users/${uuid}`,
-      SEED_NOTIFICATIONS
+      localNotifs
     );
   },
 
@@ -2945,7 +3528,7 @@ export const fiverrApi = {
       readAt: null,
       createdAt: new Date().toISOString(),
     };
-    return fetchWithFallback<NotificationItem>("/notifications", fallback, {
+    const result = await fetchWithFallback<NotificationItem>("/notifications", fallback, {
       method: "POST",
       body: JSON.stringify({
         recipientUserId: recipientUuid,
@@ -2955,24 +3538,41 @@ export const fiverrApi = {
         channel: payload.channel || "IN_APP",
       }),
     });
+    const current = getStoredNotifications();
+    writeLocalStore(STORE_KEYS.notifications, [
+      result,
+      ...current.filter((n) => n.id !== result.id),
+    ]);
+    return result;
   },
 
   async markNotificationRead(notificationId: string): Promise<NotificationItem> {
+    const current = getStoredNotifications();
+    const matched = current.find((n) => n.id === notificationId) || SEED_NOTIFICATIONS[0];
+    const nowIso = new Date().toISOString();
     const fallback: NotificationItem = {
-      ...SEED_NOTIFICATIONS[0],
+      ...matched,
       id: notificationId,
       read: true,
-      readAt: new Date().toISOString(),
+      readAt: nowIso,
     };
-    if (!UUID_REGEX.test(notificationId)) {
-      return fallback;
-    }
-    return fetchWithFallback<NotificationItem>(
-      `/notifications/${notificationId}/read`,
-      fallback,
-      {
-        method: "PATCH",
-      }
+    const result = UUID_REGEX.test(notificationId)
+      ? await fetchWithFallback<NotificationItem>(`/notifications/${notificationId}/read`, fallback, {
+          method: "PATCH",
+        })
+      : fallback;
+    writeLocalStore(
+      STORE_KEYS.notifications,
+      current.map((n) => (n.id === notificationId ? { ...n, read: true, readAt: nowIso } : n))
     );
+    return result;
+  },
+
+  markAllNotificationsRead(): NotificationItem[] {
+    const current = getStoredNotifications();
+    const nowIso = new Date().toISOString();
+    const next = current.map((n) => ({ ...n, read: true, readAt: n.readAt || nowIso }));
+    writeLocalStore(STORE_KEYS.notifications, next);
+    return next;
   },
 };

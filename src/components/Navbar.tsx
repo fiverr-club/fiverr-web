@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
   BookOpen,
+  Bot,
   Briefcase,
   Check,
   Coins,
@@ -32,11 +33,16 @@ import {
   buildSessionForAccount,
   clearAuthSession,
   DEFAULT_AUTH_ACCOUNTS,
+  FIVERREX_DATA_EVENT,
   fiverrApi,
   getAuthSession,
   getDefaultAuthSession,
   getRegisteredAccounts,
   getSavedGigIds,
+  getStoredConversations,
+  getStoredNotifications,
+  getStoredOrders,
+  getStoredWallets,
   isLoggedIn,
   SEED_NOTIFICATIONS,
   setAuthSession,
@@ -59,7 +65,9 @@ export function Navbar() {
   const [notifications, setNotifications] =
     useState<NotificationItem[]>(SEED_NOTIFICATIONS);
   const [accounts, setAccounts] = useState<AuthAccountDto[]>(DEFAULT_AUTH_ACCOUNTS);
-  const [savedCount, setSavedCount] = useState<number>(2);
+  const [savedCount, setSavedCount] = useState<number>(0);
+  const [activeOrdersCount, setActiveOrdersCount] = useState<number>(0);
+  const [unreadInboxCount, setUnreadInboxCount] = useState<number>(0);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [notifOpen, setNotifOpen] = useState<boolean>(false);
@@ -76,10 +84,36 @@ export function Navbar() {
   const [authFeedback, setAuthFeedback] = useState<string | null>(null);
 
   useEffect(() => {
+    function syncLocalCounters() {
+      const currentSession = getAuthSession();
+      setSavedCount(getSavedGigIds().length);
+      const localOrders = getStoredOrders();
+      setActiveOrdersCount(
+        localOrders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length
+      );
+      const localConvs = getStoredConversations();
+      setUnreadInboxCount(
+        localConvs.reduce((sum, c) => sum + Number(c.unreadCount || 0), 0)
+      );
+      const localNotifs = getStoredNotifications();
+      setNotifications(localNotifs);
+      const localWallets = getStoredWallets();
+      if (localWallets.length > 0) {
+        const matched =
+          localWallets.find(
+            (w) =>
+              w.sellerId === currentSession.account.id ||
+              w.sellerId === currentSession.sellerId
+          ) || localWallets[0];
+        setWalletBalance(Number(matched?.availableBalance ?? 1476.0));
+      }
+    }
+
     const initialSession = getAuthSession();
     setSession(initialSession);
     setLoggedIn(isLoggedIn());
     setCredits(getUserCreditAccount(initialSession.account.username).credits);
+    syncLocalCounters();
 
     async function loadNavbarData() {
       const currentSession = getAuthSession();
@@ -128,6 +162,7 @@ export function Navbar() {
       setSession(next);
       setLoggedIn(isLoggedIn());
       setCredits(getUserCreditAccount(next.account.username).credits);
+      syncLocalCounters();
       loadNavbarData();
     };
     const handleCreditsChange = () => {
@@ -137,14 +172,18 @@ export function Navbar() {
     const handleFavChange = () => {
       setSavedCount(getSavedGigIds().length);
     };
-    setSavedCount(getSavedGigIds().length);
+    const handleDataChange = () => {
+      syncLocalCounters();
+    };
     window.addEventListener("fiverrex-session-change", handleSessionChange);
     window.addEventListener("fiverrex-credits-change", handleCreditsChange);
     window.addEventListener("fiverrex-favorites-change", handleFavChange);
+    window.addEventListener(FIVERREX_DATA_EVENT, handleDataChange);
     return () => {
       window.removeEventListener("fiverrex-session-change", handleSessionChange);
       window.removeEventListener("fiverrex-credits-change", handleCreditsChange);
       window.removeEventListener("fiverrex-favorites-change", handleFavChange);
+      window.removeEventListener(FIVERREX_DATA_EVENT, handleDataChange);
     };
   }, []);
 
@@ -184,6 +223,11 @@ export function Navbar() {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true, readAt: updated.readAt } : n))
     );
+  }
+
+  function handleMarkAllRead() {
+    const updated = fiverrApi.markAllNotificationsRead();
+    setNotifications(updated);
   }
 
   async function handleSwitchToSelling() {
@@ -258,11 +302,21 @@ export function Navbar() {
     { href: "/", label: "Explore", icon: Sparkles },
     { href: "/jobs", label: "Jobs", icon: FolderKanban },
     { href: "/quests", label: "Quests", icon: Trophy, badge: "+500" },
+    { href: "/ai-assistant", label: "AI Copilot", icon: Bot },
     { href: "/sellers", label: "Freelancers", icon: Users },
-    { href: "/orders", label: "Orders", icon: Briefcase, badge: "3" },
-    { href: "/inbox", label: "Inbox", icon: MessageSquare, badge: "1" },
+    {
+      href: "/orders",
+      label: "Orders",
+      icon: Briefcase,
+      badge: activeOrdersCount > 0 ? String(activeOrdersCount) : undefined,
+    },
+    {
+      href: "/inbox",
+      label: "Inbox",
+      icon: MessageSquare,
+      badge: unreadInboxCount > 0 ? String(unreadInboxCount) : undefined,
+    },
     { href: "/seller/dashboard", label: "Studio", icon: LayoutDashboard },
-    { href: "/about", label: "About", icon: Info },
   ];
 
   const techDocsUrl =
@@ -413,14 +467,25 @@ export function Navbar() {
                         {unreadCount} unread updates
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      aria-label="Close notifications"
-                      onClick={() => setNotifOpen(false)}
-                      className="rounded p-1 text-white/80 hover:bg-white/10"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleMarkAllRead}
+                          className="rounded-md bg-white/15 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-white/25"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label="Close notifications"
+                        onClick={() => setNotifOpen(false)}
+                        className="rounded p-1 text-white/80 hover:bg-white/10"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto">
                     {notifications.map((n) => (
@@ -538,6 +603,19 @@ export function Navbar() {
                 </Link>
               );
             })}
+
+            <Link
+              href="/about"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                pathname === "/about"
+                  ? "bg-emerald-50 text-[#1dbf73]"
+                  : "text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <Info className="h-4 w-4 shrink-0 text-[#1dbf73]" />
+              <span>About FIVERREX</span>
+            </Link>
 
             <a
               href={techDocsUrl}

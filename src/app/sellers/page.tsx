@@ -347,7 +347,7 @@ export default function SellersDirectoryPage() {
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>
                     <Link
-                      href="/inbox"
+                      href={`/inbox?seller=${encodeURIComponent(seller.username)}`}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-bold text-gray-700 transition hover:border-gray-900"
                     >
                       <MessageSquare className="h-3.5 w-3.5 text-[#1dbf73]" />

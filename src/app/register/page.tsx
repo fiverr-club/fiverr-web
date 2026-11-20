@@ -98,8 +98,18 @@ export default function RegisterPage() {
           ? `Account @${session.account.username} created with ${NEW_ACCOUNT_CREDITS} Credits! (@${referrerAwarded} earned +${REFERRAL_REWARD_CREDITS} Credits)`
           : `Account @${session.account.username} created with ${NEW_ACCOUNT_CREDITS} FREE Credits!`
       );
+      const nextRaw =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("next")?.trim()
+          : null;
+      const safeNext =
+        nextRaw && nextRaw.startsWith("/") && !nextRaw.startsWith("//")
+          ? nextRaw
+          : roleChoice === "SELLER"
+          ? "/seller/dashboard"
+          : "/jobs";
       setTimeout(() => {
-        router.push(roleChoice === "SELLER" ? "/seller/dashboard" : "/jobs");
+        router.push(safeNext);
       }, 850);
     } catch {
       setErrorMsg("Unable to register account right now. Please try again.");

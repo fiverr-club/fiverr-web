@@ -13,30 +13,41 @@ import {
   Star,
   X,
   ArrowUpRight,
+  Edit3,
+  Trash2,
 } from "lucide-react";
 import {
+  FIVERREX_DATA_EVENT,
   SEED_SELLER_STATS,
   SEED_ORDERS,
   SEED_GIGS,
   CATEGORIES,
   fiverrApi,
   getAuthSession,
+  getStoredGigs,
+  getStoredOrders,
+  getStoredWithdrawals,
   type Gig,
   type Order,
+  type WithdrawalRecord,
 } from "@/lib/api";
 
 export default function SellerDashboardPage() {
   const [stats, setStats] = useState(SEED_SELLER_STATS);
   const [orders, setOrders] = useState<Order[]>(SEED_ORDERS);
-  const [myGigs, setMyGigs] = useState<Gig[]>(SEED_GIGS.slice(0, 3));
+  const [myGigs, setMyGigs] = useState<Gig[]>(SEED_GIGS.slice(0, 6));
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editingGigId, setEditingGigId] = useState<string | null>(null);
   const [withdrawBanner, setWithdrawBanner] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const [publishingGig, setPublishingGig] = useState(false);
 
-  // Create Gig Form State
+  // Create / Edit Gig Form State
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState<string>("Programming & Tech");
+  const [newDescription, setNewDescription] = useState<string>("");
+  const [newDeliveryDays, setNewDeliveryDays] = useState<number>(3);
   const [basicPrice, setBasicPrice] = useState<number>(195);
   const [standardPrice, setStandardPrice] = useState<number>(490);
   const [premiumPrice, setPremiumPrice] = useState<number>(990);
@@ -62,21 +73,66 @@ export default function SellerDashboardPage() {
         setOrders(liveOrders);
       }
       if (liveGigs && liveGigs.length > 0) {
-        setMyGigs(liveGigs.slice(0, 6));
+        setMyGigs(liveGigs.slice(0, 9));
       }
+      setWithdrawals(getStoredWithdrawals());
     }
     loadSellerStudio();
+
+    const syncStudio = () => {
+      setOrders(getStoredOrders());
+      setMyGigs(getStoredGigs().slice(0, 9));
+      setWithdrawals(getStoredWithdrawals());
+      fiverrApi.getSellerDashboard().then((s) => setStats(s)).catch(() => {});
+    };
+    window.addEventListener(FIVERREX_DATA_EVENT, syncStudio);
+    window.addEventListener("fiverrex-session-change", syncStudio);
+    return () => {
+      window.removeEventListener(FIVERREX_DATA_EVENT, syncStudio);
+      window.removeEventListener("fiverrex-session-change", syncStudio);
+    };
   }, []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setCreateModalOpen(false);
+        setEditingGigId(null);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  function openCreateModal() {
+    setEditingGigId(null);
+    setNewTitle("");
+    setNewCategory("Programming & Tech");
+    setNewDescription("");
+    setNewDeliveryDays(3);
+    setBasicPrice(195);
+    setStandardPrice(490);
+    setPremiumPrice(990);
+    setCreateModalOpen(true);
+  }
+
+  function openEditModal(gig: Gig) {
+    setEditingGigId(gig.id);
+    setNewTitle(gig.title);
+    setNewCategory(gig.category);
+    setNewDescription(gig.description);
+    setNewDeliveryDays(gig.packages.Basic.deliveryDays);
+    setBasicPrice(gig.packages.Basic.price);
+    setStandardPrice(gig.packages.Standard.price);
+    setPremiumPrice(gig.packages.Premium.price);
+    setCreateModalOpen(true);
+  }
+
+  async function handleDeleteGig(gig: Gig) {
+    await fiverrApi.deleteGig(gig.id);
+    setMyGigs(getStoredGigs().slice(0, 9));
+    setWithdrawBanner(`Removed "${gig.title}" from your active marketplace listings.`);
+  }
 
   async function handleWithdrawFunds() {
     if (stats.availableForWithdrawal <= 0 || withdrawing) return;
@@ -93,32 +149,53 @@ export default function SellerDashboardPage() {
       ...prev,
       availableForWithdrawal: Number(updatedWallet.availableBalance ?? 0),
     }));
+    setWithdrawals(getStoredWithdrawals());
     setWithdrawing(false);
     window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
     setWithdrawBanner(
       `Withdrawal of $${amount.toLocaleString("en-US", {
         minimumFractionDigits: 2,
-      })} processed via POST /api/v1/payments/wallets/withdraw!`
+      })} processed and logged to your payout ledger!`
     );
   }
 
   async function handleCreateGig(e: React.FormEvent) {
     e.preventDefault();
     setPublishingGig(true);
+    if (editingGigId) {
+      const updated = await fiverrApi.updateGig(editingGigId, {
+        title: newTitle,
+        category: newCategory,
+        description: newDescription,
+        basicPrice,
+        standardPrice,
+        premiumPrice,
+      });
+      setMyGigs(getStoredGigs().slice(0, 9));
+      setPublishingGig(false);
+      setCreateModalOpen(false);
+      setEditingGigId(null);
+      if (updated) {
+        setWithdrawBanner(`Updated "${updated.title}" across the marketplace!`);
+      }
+      return;
+    }
+
     const createdGig = await fiverrApi.createGig({
       title: newTitle,
       category: newCategory,
+      description: newDescription,
+      deliveryDays: newDeliveryDays,
       basicPrice,
       standardPrice,
       premiumPrice,
     });
-    setMyGigs((prev) => [createdGig, ...prev]);
+    setMyGigs(getStoredGigs().slice(0, 9));
     setNewTitle("");
+    setNewDescription("");
     setPublishingGig(false);
     setCreateModalOpen(false);
-    setWithdrawBanner(
-      `Published "${createdGig.title}" to PostgreSQL via POST /api/v1/gigs!`
-    );
+    setWithdrawBanner(`Published "${createdGig.title}" live to the FIVERREX marketplace!`);
   }
 
   return (
@@ -151,7 +228,7 @@ export default function SellerDashboardPage() {
           </button>
           <button
             type="button"
-            onClick={() => setCreateModalOpen(true)}
+            onClick={openCreateModal}
             className="inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#19a463]"
           >
             <Plus className="h-4 w-4" />
@@ -342,7 +419,7 @@ export default function SellerDashboardPage() {
                     </span>
                   </div>
                   <Link
-                    href="/orders"
+                    href={`/orders?order=${encodeURIComponent(ord.id)}`}
                     className="rounded-lg border border-gray-300 px-3 py-1.5 font-bold text-gray-700 hover:border-gray-900"
                   >
                     Manage
@@ -367,7 +444,7 @@ export default function SellerDashboardPage() {
           </div>
           <button
             type="button"
-            onClick={() => setCreateModalOpen(true)}
+            onClick={openCreateModal}
             className="text-xs font-bold text-[#1dbf73] hover:underline"
           >
             + Add Another Gig
@@ -381,9 +458,29 @@ export default function SellerDashboardPage() {
               className="flex flex-col justify-between rounded-xl border border-gray-200 p-4"
             >
               <div>
-                <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-[#1dbf73]">
-                  {gig.category}
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-[#1dbf73]">
+                    {gig.category}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(gig)}
+                      title="Edit Gig"
+                      className="rounded-md border border-gray-200 p-1 text-gray-500 transition hover:border-[#1dbf73] hover:text-[#1dbf73]"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteGig(gig)}
+                      title="Delete Gig"
+                      className="rounded-md border border-gray-200 p-1 text-gray-500 transition hover:border-rose-300 hover:text-rose-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
                 <Link
                   href={`/gigs/${gig.id}`}
                   className="mt-2 block text-sm font-bold text-gray-900 hover:text-[#1dbf73]"
@@ -408,10 +505,47 @@ export default function SellerDashboardPage() {
         </div>
       </div>
 
-      {/* Create New Gig Modal */}
+      {/* Payout & Withdrawal Ledger */}
+      {withdrawals.length > 0 && (
+        <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h2 className="text-base font-extrabold text-gray-900">
+            Recent Escrow Payouts &amp; Withdrawals ({withdrawals.length})
+          </h2>
+          <div className="mt-4 divide-y divide-gray-100 text-xs">
+            {withdrawals.map((wd) => (
+              <div key={wd.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div>
+                  <p className="font-bold text-gray-900">{wd.payoutDestination}</p>
+                  <p className="text-[11px] text-gray-500">
+                    {new Date(wd.createdAt).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-[#1dbf73]">
+                    {wd.status}
+                  </span>
+                  <span className="font-extrabold tabular-nums text-gray-900">
+                    ${wd.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Gig Modal */}
       {createModalOpen && (
         <div
-          onClick={() => setCreateModalOpen(false)}
+          onClick={() => {
+            setCreateModalOpen(false);
+            setEditingGigId(null);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
         >
           <div
@@ -419,11 +553,16 @@ export default function SellerDashboardPage() {
             className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
-              <h3 className="text-sm font-bold">Publish New 3-Tier Gig</h3>
+              <h3 className="text-sm font-bold">
+                {editingGigId ? "Edit 3-Tier Gig Listing" : "Publish New 3-Tier Gig"}
+              </h3>
               <button
                 type="button"
                 aria-label="Close create gig modal"
-                onClick={() => setCreateModalOpen(false)}
+                onClick={() => {
+                  setCreateModalOpen(false);
+                  setEditingGigId(null);
+                }}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10"
               >
                 <X className="h-4 w-4" />
@@ -443,19 +582,47 @@ export default function SellerDashboardPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700">Category</label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-xs font-semibold"
+                  >
+                    {CATEGORIES.filter((c) => c !== "All Categories").map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700">
+                    Basic Delivery (Days)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={newDeliveryDays}
+                    onChange={(e) => setNewDeliveryDays(Number(e.target.value))}
+                    className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-xs font-bold"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-gray-700">Category</label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-xs font-semibold"
-                >
-                  {CATEGORIES.filter((c) => c !== "All Categories").map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-xs font-bold text-gray-700">
+                  Service Description
+                </label>
+                <textarea
+                  rows={3}
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="Describe your architecture deliverables, tech stack, testing coverage, and SLA..."
+                  className="mt-1 w-full rounded-xl border border-gray-300 p-3 text-xs focus:border-[#1dbf73] focus:outline-none"
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -496,7 +663,11 @@ export default function SellerDashboardPage() {
                 disabled={publishingGig}
                 className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463] disabled:opacity-50"
               >
-                {publishingGig ? "Publishing to PostgreSQL..." : "Publish Gig to Marketplace"}
+                {publishingGig
+                  ? "Saving..."
+                  : editingGigId
+                  ? "Save Gig Changes"
+                  : "Publish Gig to Marketplace"}
               </button>
             </form>
           </div>

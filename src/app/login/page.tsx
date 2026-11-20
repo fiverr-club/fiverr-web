@@ -23,6 +23,15 @@ import {
   type AuthAccountDto,
 } from "@/lib/api";
 
+function getSafeNextPath(fallback = "/"): string {
+  if (typeof window === "undefined") return fallback;
+  const raw = new URLSearchParams(window.location.search).get("next")?.trim();
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
+    return raw;
+  }
+  return fallback;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState<string>("");
@@ -51,8 +60,9 @@ export default function LoginPage() {
         password,
       });
       setSuccessMsg(`Welcome back, ${session.displayName}! Redirecting...`);
+      const nextPath = getSafeNextPath("/");
       setTimeout(() => {
-        router.push("/");
+        router.push(nextPath);
       }, 600);
     } catch {
       setErrorMsg("Unable to sign in right now. Please try again.");
@@ -65,8 +75,9 @@ export default function LoginPage() {
     const session = buildSessionForAccount(acc, `jwt-${acc.id}`, `refresh-${acc.id}`);
     setAuthSession(session);
     setSuccessMsg(`Signed in as @${acc.username}. Redirecting...`);
+    const nextPath = getSafeNextPath("/");
     setTimeout(() => {
-      router.push("/");
+      router.push(nextPath);
     }, 500);
   }
 

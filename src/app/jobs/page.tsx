@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Award,
@@ -32,7 +33,8 @@ import {
 type JobSort = "NEWEST" | "BUDGET_DESC" | "FEWEST_BIDS";
 const PAGE_SIZE = 20;
 
-export default function JobsMarketplacePage() {
+function JobsMarketplaceContent() {
+  const searchParams = useSearchParams();
   const [jobs, setJobs] = useState<JobProject[]>([]);
   const [credits, setCredits] = useState<number>(NEW_ACCOUNT_CREDITS);
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
@@ -44,6 +46,17 @@ export default function JobsMarketplacePage() {
   const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "MY_BIDS" | "AWARDED">("ALL");
   const [sortBy, setSortBy] = useState<JobSort>("NEWEST");
   const [currentPage, setCurrentPage] = useState<number>(1);
+
+  useEffect(() => {
+    const catParam = searchParams.get("category");
+    const qParam = searchParams.get("q");
+    if (catParam && CATEGORIES.includes(catParam as (typeof CATEGORIES)[number])) {
+      setSelectedCategory(catParam);
+    }
+    if (qParam !== null) {
+      setSearchQuery(qParam);
+    }
+  }, [searchParams]);
 
   // Post a Project Modal
   const [postModalOpen, setPostModalOpen] = useState<boolean>(false);
@@ -731,5 +744,13 @@ export default function JobsMarketplacePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function JobsMarketplacePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#f8fafc]" />}>
+      <JobsMarketplaceContent />
+    </Suspense>
   );
 }

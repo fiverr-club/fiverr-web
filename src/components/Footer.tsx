@@ -85,8 +85,23 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/ai-assistant" className="font-semibold text-[#1dbf73] hover:underline">
+                  AI Agent Copilot (Gemini)
+                </Link>
+              </li>
+              <li>
                 <Link href="/sellers" className="transition hover:text-[#1dbf73]">
                   Verified Freelancers Directory
+                </Link>
+              </li>
+              <li>
+                <Link href="/favorites" className="transition hover:text-[#1dbf73]">
+                  Saved Gigs Wishlist
+                </Link>
+              </li>
+              <li>
+                <Link href="/inbox" className="transition hover:text-[#1dbf73]">
+                  Real-Time Inbox &amp; Custom Offers
                 </Link>
               </li>
               <li>
@@ -139,6 +154,35 @@ export function Footer() {
               <div className="flex items-center gap-2 text-gray-600">
                 <Lock className="h-4 w-4 shrink-0 text-amber-600" />
                 <span>Escrow Saga + Kafka KRaft</span>
+              </div>
+              <div className="mt-3 space-y-1.5 border-t border-gray-200 pt-3">
+                <a
+                  href="https://t.me/devcommunity101"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between font-semibold text-[#0a4226] hover:text-[#1dbf73]"
+                >
+                  <span>Telegram DevCommunity101</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <a
+                  href="https://t.me/agent_programming_bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between text-gray-600 hover:text-[#1dbf73]"
+                >
+                  <span>@agent_programming_bot</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <a
+                  href="https://t.me/Fiverrex_bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between text-gray-600 hover:text-[#1dbf73]"
+                >
+                  <span>@Fiverrex_bot (Job Feed)</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
             </div>
           </div>

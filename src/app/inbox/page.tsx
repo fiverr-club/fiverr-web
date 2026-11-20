@@ -1,8 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
+  ArrowRight,
   Send,
+  Search,
   Sparkles,
   CheckCircle2,
   Clock,
@@ -12,19 +16,25 @@ import {
   X,
 } from "lucide-react";
 import {
+  FIVERREX_DATA_EVENT,
   SEED_CONVERSATIONS,
   fiverrApi,
+  getStoredConversations,
   type Conversation,
   type PackageTierName,
 } from "@/lib/api";
 
-export default function InboxPage() {
+function InboxWorkspaceContent() {
+  const searchParams = useSearchParams();
+  const threadEndRef = useRef<HTMLDivElement>(null);
+
   const [conversations, setConversations] = useState<Conversation[]>(SEED_CONVERSATIONS);
   const [activeConvId, setActiveConvId] = useState<string>(SEED_CONVERSATIONS[0].id);
+  const [convSearch, setConvSearch] = useState<string>("");
   const [messageInput, setMessageInput] = useState<string>("");
   const [offerModalOpen, setOfferModalOpen] = useState<boolean>(false);
   const [sendingMsg, setSendingMsg] = useState<boolean>(false);
-  const [inboxToast, setInboxToast] = useState<string | null>(null);
+  const [inboxToast, setInboxToast] = useState<{ text: string; orderId?: string } | null>(null);
 
   // Custom Offer Form State
   const [offerTitle, setOfferTitle] = useState<string>(
@@ -36,17 +46,36 @@ export default function InboxPage() {
   const [offerRevisions, setOfferRevisions] = useState<number>(4);
 
   useEffect(() => {
+    const sellerParam = searchParams.get("seller")?.trim();
+    const gigParam = searchParams.get("gig")?.trim() || undefined;
+
     async function loadInbox() {
       const liveConvs = await fiverrApi.getConversations();
-      if (liveConvs && liveConvs.length > 0) {
-        setConversations(liveConvs);
-        setActiveConvId((prev) =>
-          liveConvs.some((c) => c.id === prev) ? prev : liveConvs[0].id
-        );
+      let list = liveConvs && liveConvs.length > 0 ? liveConvs : getStoredConversations();
+
+      if (sellerParam) {
+        const opened = fiverrApi.openOrCreateConversation({
+          sellerUsername: sellerParam,
+          gigId: gigParam,
+        });
+        list = getStoredConversations();
+        setConversations(list);
+        setActiveConvId(opened.id);
+        fiverrApi.markConversationRead(opened.id);
+        return;
       }
+
+      setConversations(list);
+      setActiveConvId((prev) => (list.some((c) => c.id === prev) ? prev : list[0].id));
     }
     loadInbox();
-  }, []);
+
+    const syncLocal = () => {
+      setConversations(getStoredConversations());
+    };
+    window.addEventListener(FIVERREX_DATA_EVENT, syncLocal);
+    return () => window.removeEventListener(FIVERREX_DATA_EVENT, syncLocal);
+  }, [searchParams]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -58,17 +87,36 @@ export default function InboxPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const filteredConversations = useMemo(() => {
+    const q = convSearch.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter(
+      (c) =>
+        c.participantName.toLowerCase().includes(q) ||
+        c.participantUsername.toLowerCase().includes(q) ||
+        c.relatedGigTitle.toLowerCase().includes(q) ||
+        c.lastMessage.toLowerCase().includes(q)
+    );
+  }, [conversations, convSearch]);
+
   const activeConv =
     conversations.find((c) => c.id === activeConvId) || conversations[0];
 
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeConv?.id, activeConv?.messages.length]);
+
   async function handleSelectConversation(convId: string) {
     setActiveConvId(convId);
+    fiverrApi.markConversationRead(convId);
     const msgs = await fiverrApi.getConversationMessages(convId);
-    if (msgs && msgs.length > 0) {
-      setConversations((prev) =>
-        prev.map((c) => (c.id === convId ? { ...c, messages: msgs, unreadCount: 0 } : c))
-      );
-    }
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? { ...c, messages: msgs && msgs.length > 0 ? msgs : c.messages, unreadCount: 0 }
+          : c
+      )
+    );
   }
 
   async function handleSendMessage(e: React.FormEvent) {
@@ -78,27 +126,17 @@ export default function InboxPage() {
     const text = messageInput.trim();
     setMessageInput("");
 
-    const savedMsg = await fiverrApi.sendMessage({
+    await fiverrApi.sendMessage({
       conversationId: activeConv.id,
       senderId: activeConv.buyerId,
       recipientId: activeConv.sellerId,
+      recipientUsername: activeConv.participantUsername,
       gigId: activeConv.gigId,
       content: text,
       messageType: "TEXT",
     });
 
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id !== activeConv.id) return conv;
-        return {
-          ...conv,
-          lastMessage: text,
-          lastMessageTime: "Just now",
-          unreadCount: 0,
-          messages: [...conv.messages, savedMsg],
-        };
-      })
-    );
+    setConversations(getStoredConversations());
     setSendingMsg(false);
   }
 
@@ -106,10 +144,11 @@ export default function InboxPage() {
     e.preventDefault();
     setSendingMsg(true);
     const offerContent = `Custom Offer: ${offerTitle} ($${offerPrice} - ${offerDays} days delivery)`;
-    const savedOfferMsg = await fiverrApi.sendMessage({
+    await fiverrApi.sendMessage({
       conversationId: activeConv.id,
       senderId: activeConv.sellerId || "22222222-2222-2222-2222-222222222222",
       recipientId: activeConv.buyerId || "11111111-1111-1111-1111-111111111111",
+      recipientUsername: activeConv.participantUsername,
       gigId: activeConv.gigId || "33333333-3333-3333-3333-333333333333",
       content: offerContent,
       messageType: "CUSTOM_OFFER",
@@ -122,27 +161,10 @@ export default function InboxPage() {
       },
     });
 
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id !== activeConv.id) return conv;
-        return {
-          ...conv,
-          lastMessage: `Custom Offer: ${offerTitle} ($${offerPrice})`,
-          lastMessageTime: "Just now",
-          messages: [
-            ...conv.messages,
-            {
-              ...savedOfferMsg,
-              sender: "seller",
-              senderName: conv.participantName,
-            },
-          ],
-        };
-      })
-    );
+    setConversations(getStoredConversations());
     setSendingMsg(false);
     setOfferModalOpen(false);
-    setInboxToast("Custom offer dispatched via POST /api/v1/messages!");
+    setInboxToast({ text: "Custom offer dispatched and saved to thread!" });
   }
 
   async function handleAcceptOffer(msgId: string) {
@@ -150,41 +172,37 @@ export default function InboxPage() {
     const offer = targetMsg?.customOffer;
     if (offer) {
       const createdOrder = await fiverrApi.createOrder({
-        gigId: offer.gigId || activeConv.gigId || "33333333-3333-3333-3333-333333333333",
+        gigId: offer.gigId || activeConv.gigId || "gig-101",
+        gigTitle: offer.title,
+        sellerName: activeConv.participantName,
+        sellerUsername: activeConv.participantUsername,
         packageTier: offer.packageTier || "Standard",
         requirements: `Accepted Custom Offer: ${offer.title}`,
         amount: offer.price,
+        deliveryDays: offer.deliveryDays,
         sellerId: activeConv.sellerId,
       });
-      await fiverrApi.holdEscrow({
+      await Promise.all([
+        fiverrApi.holdEscrow({
+          orderId: createdOrder.id,
+          sellerId: activeConv.sellerId,
+          grossAmount: offer.price,
+        }),
+        fiverrApi.sendNotification({
+          type: "ORDER_CREATED",
+          title: `Custom Offer Funded (${createdOrder.orderNumber})`,
+          message: `Escrow of $${offer.price} locked with ${activeConv.participantName}.`,
+          channel: "IN_APP",
+        }),
+      ]);
+      fiverrApi.acceptCustomOfferInThread(activeConv.id, msgId);
+      setConversations(getStoredConversations());
+      setInboxToast({
+        text: `Custom Offer accepted! Order ${createdOrder.orderNumber} created & $${offer.price} locked in Escrow.`,
         orderId: createdOrder.id,
-        sellerId: activeConv.sellerId,
-        grossAmount: offer.price,
       });
-      setInboxToast(
-        `Custom Offer accepted! Order ${createdOrder.orderNumber} created & $${offer.price} locked in Escrow.`
-      );
       window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
     }
-
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id !== activeConv.id) return conv;
-        return {
-          ...conv,
-          messages: conv.messages.map((m) => {
-            if (m.id !== msgId || !m.customOffer) return m;
-            return {
-              ...m,
-              customOffer: {
-                ...m.customOffer,
-                status: "ACCEPTED",
-              },
-            };
-          }),
-        };
-      })
-    );
   }
 
   return (
@@ -211,32 +229,53 @@ export default function InboxPage() {
       </div>
 
       {inboxToast && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-950">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-950">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-[#1dbf73]" />
-            <span>{inboxToast}</span>
+            <span>{inboxToast.text}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setInboxToast(null)}
-            className="text-emerald-700 hover:underline"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-3">
+            {inboxToast.orderId && (
+              <Link
+                href={`/orders?order=${encodeURIComponent(inboxToast.orderId)}`}
+                className="inline-flex items-center gap-1 rounded-lg bg-[#0a4226] px-3 py-1.5 text-[11px] font-bold text-white hover:bg-[#1dbf73]"
+              >
+                <span>Open Order</span>
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => setInboxToast(null)}
+              className="text-emerald-700 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
       <div className="grid min-h-[600px] grid-cols-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:h-[640px] lg:grid-cols-12">
         {/* Left Conversation Sidebar */}
         <div className="border-b border-gray-200 bg-gray-50/50 lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:border-b-0 lg:border-r">
-          <div className="border-b border-gray-200 p-4">
+          <div className="space-y-2.5 border-b border-gray-200 p-4">
             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              All Conversations ({conversations.length})
+              All Conversations ({filteredConversations.length})
             </h2>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={convSearch}
+                onChange={(e) => setConvSearch(e.target.value)}
+                placeholder="Search threads or freelancers..."
+                className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-3 text-xs text-gray-800 placeholder-gray-400 focus:border-[#1dbf73] focus:outline-none"
+              />
+            </div>
           </div>
 
           <div className="divide-y divide-gray-100 lg:flex-1 lg:overflow-y-auto">
-            {conversations.map((conv) => {
+            {filteredConversations.map((conv) => {
               const isSelected = conv.id === activeConv.id;
               return (
                 <button
@@ -259,13 +298,20 @@ export default function InboxPage() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-xs font-extrabold text-gray-900">
                         {conv.participantName}
                       </p>
-                      <span className="text-[10px] font-semibold text-gray-400">
-                        {conv.lastMessageTime}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {conv.unreadCount > 0 && (
+                          <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1dbf73] px-1 text-[10px] font-bold text-white">
+                            {conv.unreadCount}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-semibold text-gray-400">
+                          {conv.lastMessageTime}
+                        </span>
+                      </div>
                     </div>
                     <p className="truncate text-[11px] font-medium text-[#1dbf73]">
                       {conv.relatedGigTitle}
@@ -383,6 +429,7 @@ export default function InboxPage() {
                 </div>
               );
             })}
+            <div ref={threadEndRef} />
           </div>
 
           {/* Message Input Bar */}
@@ -510,5 +557,13 @@ export default function InboxPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#f8fafc]" />}>
+      <InboxWorkspaceContent />
+    </Suspense>
   );
 }

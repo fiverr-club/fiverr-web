@@ -37,10 +37,11 @@ export default function GigDetailPage() {
   const router = useRouter();
   const gigId = params?.id || "gig-101";
 
-  const initialGig = SEED_GIGS.find((g) => g.id === gigId) || SEED_GIGS[0];
-  const [gig, setGig] = useState<Gig>(initialGig);
+  const initialGig = SEED_GIGS.find((g) => g.id === gigId) || null;
+  const [gig, setGig] = useState<Gig | null>(initialGig);
+  const [loadedGig, setLoadedGig] = useState<boolean>(Boolean(initialGig));
   const [allGigs, setAllGigs] = useState<Gig[]>(SEED_GIGS);
-  const [reviews, setReviews] = useState<ReviewItem[]>(initialGig.reviews);
+  const [reviews, setReviews] = useState<ReviewItem[]>(initialGig?.reviews || []);
 
   const [selectedTier, setSelectedTier] = useState<PackageTierName>("Standard");
   const [selectedImageIdx, setSelectedImageIdx] = useState<number>(0);
@@ -48,6 +49,7 @@ export default function GigDetailPage() {
   const [requirements, setRequirements] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [orderSuccessNumber, setOrderSuccessNumber] = useState<string | null>(null);
+  const [orderSuccessId, setOrderSuccessId] = useState<string | null>(null);
 
   // Wishlist & Share State
   const [saved, setSaved] = useState<boolean>(false);
@@ -77,7 +79,10 @@ export default function GigDetailPage() {
       if (liveGig) {
         setGig(liveGig);
         setSaved(isGigSaved(liveGig.id));
+      } else {
+        setGig(null);
       }
+      setLoadedGig(true);
       if (liveReviews && liveReviews.length > 0) {
         setReviews(liveReviews);
       }
@@ -106,13 +111,36 @@ export default function GigDetailPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const activePackage = gig.packages[selectedTier] || gig.packages.Standard;
+  if (!gig && loadedGig) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="text-2xl font-extrabold text-gray-900">Service Not Found</h1>
+        <p className="mt-2 text-xs text-gray-600">
+          We couldn&apos;t locate a service matching <code className="font-mono">{gigId}</code>.
+        </p>
+        <Link
+          href="/"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#19a463]"
+        >
+          <span>Explore All Services</span>
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      </div>
+    );
+  }
+
+  if (!gig) {
+    return <div className="mx-auto max-w-7xl px-4 py-12 text-xs text-gray-500">Loading service...</div>;
+  }
+
+  const activeGig = gig;
+  const activePackage = activeGig.packages[selectedTier] || activeGig.packages.Standard;
   const serviceFee = Number((activePackage.price * 0.055).toFixed(2));
   const totalEscrow = Number((activePackage.price + serviceFee).toFixed(2));
 
   function handleToggleSave() {
-    const next = toggleSavedGigId(gig.id);
-    setSaved(next.includes(gig.id));
+    const next = toggleSavedGigId(activeGig.id);
+    setSaved(next.includes(activeGig.id));
   }
 
   function handleShareGig() {
@@ -127,29 +155,30 @@ export default function GigDetailPage() {
     e.preventDefault();
     setSubmitting(true);
     const created = await fiverrApi.createOrder({
-      gigId: gig.id,
+      gigId: activeGig.id,
       packageTier: selectedTier,
       requirements,
       amount: activePackage.price,
-      sellerId: gig.seller.id,
+      sellerId: activeGig.seller.id,
     });
 
     await Promise.all([
       fiverrApi.holdEscrow({
         orderId: created.id,
-        sellerId: gig.seller.id,
+        sellerId: activeGig.seller.id,
         grossAmount: activePackage.price,
       }),
       fiverrApi.sendNotification({
         type: "ORDER_CREATED",
         title: `New ${selectedTier} Order ${created.orderNumber}`,
-        message: `Escrow deposit of $${totalEscrow.toFixed(2)} locked for "${gig.title}".`,
+        message: `Escrow deposit of $${totalEscrow.toFixed(2)} locked for "${activeGig.title}".`,
         channel: "IN_APP",
       }),
     ]);
 
     setSubmitting(false);
     setOrderSuccessNumber(created.orderNumber);
+    setOrderSuccessId(created.id);
     window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
   }
 
@@ -158,8 +187,8 @@ export default function GigDetailPage() {
     if (!reviewComment.trim()) return;
     setSubmittingReview(true);
     const createdRev = await fiverrApi.submitReview({
-      gigId: gig.id,
-      sellerId: gig.seller.id,
+      gigId: activeGig.id,
+      sellerId: activeGig.seller.id,
       communicationRating: commRating,
       serviceAsDescribedRating: serviceRating,
       buyAgainRecommendRating: recommendRating,
@@ -168,7 +197,7 @@ export default function GigDetailPage() {
     setReviews((prev) => [createdRev, ...prev]);
     setReviewComment("");
     setSubmittingReview(false);
-    setReviewToast("Verified 3-criteria review published via POST /api/v1/reviews!");
+    setReviewToast("Verified 3-criteria review published and saved!");
   }
 
   async function handleSendSellerReply(reviewId: string) {
@@ -468,7 +497,7 @@ export default function GigDetailPage() {
                   <span>View Full Portfolio</span>
                 </Link>
                 <Link
-                  href="/inbox"
+                  href={`/inbox?seller=${encodeURIComponent(gig.seller.username)}&gig=${encodeURIComponent(gig.id)}`}
                   className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-800 transition hover:border-gray-900"
                 >
                   <MessageSquare className="h-4 w-4 text-[#1dbf73]" />
@@ -797,7 +826,7 @@ export default function GigDetailPage() {
               </button>
 
               <Link
-                href="/inbox"
+                href={`/inbox?seller=${encodeURIComponent(gig.seller.username)}&gig=${encodeURIComponent(gig.id)}`}
                 className="mt-3 block w-full rounded-xl border border-gray-300 py-2.5 text-center text-xs font-bold text-gray-700 transition hover:bg-gray-50"
               >
                 Contact Seller or Request Custom Offer
@@ -879,7 +908,13 @@ export default function GigDetailPage() {
                 <div className="flex gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => router.push("/orders")}
+                    onClick={() =>
+                      router.push(
+                        orderSuccessId
+                          ? `/orders?order=${encodeURIComponent(orderSuccessId)}`
+                          : "/orders"
+                      )
+                    }
                     className="flex-1 rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white hover:bg-[#19a463]"
                   >
                     Go to Order Workspace

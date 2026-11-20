@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { getAuthSession, isLoggedIn } from "@/lib/api";
+import { fiverrApi, getAuthSession, isLoggedIn } from "@/lib/api";
 import {
   awardJobBid,
   getStoredJobs,
@@ -30,19 +30,20 @@ export default function JobBiddingDetailPage() {
   const params = useParams<{ id: string }>();
   const jobId = params?.id || SEED_JOBS[0].id;
 
-  const [job, setJob] = useState<JobProject>(
-    SEED_JOBS.find((j) => j.id === jobId) || SEED_JOBS[0]
-  );
+  const initialFound = SEED_JOBS.find((j) => j.id === jobId) || null;
+  const [job, setJob] = useState<JobProject | null>(initialFound);
+  const [checkedStorage, setCheckedStorage] = useState<boolean>(Boolean(initialFound));
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
   const [username, setUsername] = useState<string>("jordan_taylor");
   const [credits, setCredits] = useState<number>(100);
   const [roleView, setRoleView] = useState<"FREELANCER" | "CLIENT">("FREELANCER");
+  const [awardedOrderId, setAwardedOrderId] = useState<string | null>(null);
 
   // Bid Form State
   const [bidAmount, setBidAmount] = useState<number>(
-    Math.round((job.budgetMin + job.budgetMax) / 2)
+    initialFound ? Math.round((initialFound.budgetMin + initialFound.budgetMax) / 2) : 2500
   );
-  const [bidDays, setBidDays] = useState<number>(job.deliveryDays);
+  const [bidDays, setBidDays] = useState<number>(initialFound?.deliveryDays ?? 14);
   const [bidMilestones, setBidMilestones] = useState<string>(
     "Milestone 1: Architecture & Setup | Milestone 2: Core Implementation & Tests | Milestone 3: Production Deploy"
   );
@@ -52,9 +53,10 @@ export default function JobBiddingDetailPage() {
   useEffect(() => {
     function sync() {
       const allJobs = getStoredJobs();
-      const found = allJobs.find((j) => j.id === jobId);
+      const found = allJobs.find((j) => j.id === jobId) || null;
+      setJob(found);
+      setCheckedStorage(true);
       if (found) {
-        setJob(found);
         setBidAmount(Math.round((found.budgetMin + found.budgetMax) / 2));
         setBidDays(found.deliveryDays);
       }
@@ -75,7 +77,31 @@ export default function JobBiddingDetailPage() {
     };
   }, [jobId]);
 
-  const userBid = job.bids.find(
+  if (!job && checkedStorage) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <h1 className="text-2xl font-extrabold text-gray-900">Project Not Found</h1>
+        <p className="mt-2 text-xs text-gray-600">
+          We couldn&apos;t find a project matching <code className="font-mono">{jobId}</code>.
+        </p>
+        <Link
+          href="/jobs"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#19a463]"
+        >
+          <span>Browse All Open Projects</span>
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return <div className="mx-auto max-w-7xl px-4 py-12 text-xs text-gray-500">Loading project...</div>;
+  }
+
+  const activeJob = job;
+
+  const userBid = activeJob.bids.find(
     (b) => b.bidderUsername.toLowerCase() === username.toLowerCase()
   );
 
@@ -96,13 +122,13 @@ export default function JobBiddingDetailPage() {
 
     const session = getAuthSession();
     const res = submitJobBid({
-      jobId: job.id,
+      jobId: activeJob.id,
       bidderUsername: session.account.username,
       bidderName: session.displayName,
       bidderAvatar: session.avatarUrl,
       bidderLevel: "Verified Freelancer",
-      amount: Number(bidAmount) || job.budgetMin,
-      deliveryDays: Number(bidDays) || job.deliveryDays,
+      amount: Number(bidAmount) || activeJob.budgetMin,
+      deliveryDays: Number(bidDays) || activeJob.deliveryDays,
       proposal: bidProposal.trim(),
       milestones: bidMilestones.trim(),
     });
@@ -118,13 +144,43 @@ export default function JobBiddingDetailPage() {
     setFeedback({ ok: true, text: res.message });
   }
 
-  function handleAwardBid(bidId: string) {
-    const updated = awardJobBid(job.id, bidId);
+  async function handleAwardBid(bidId: string) {
+    const winningBid = activeJob.bids.find((b) => b.id === bidId);
+    const updated = awardJobBid(activeJob.id, bidId);
     if (updated) {
       setJob(updated);
+      let createdOrderNumber = "";
+      if (winningBid) {
+        const order = await fiverrApi.createOrder({
+          gigId: "gig-101",
+          gigTitle: activeJob.title,
+          sellerName: winningBid.bidderName,
+          sellerUsername: winningBid.bidderUsername,
+          packageTier: "Premium",
+          requirements: `Awarded Job Contract (${activeJob.id}): ${winningBid.milestones || activeJob.description}`,
+          amount: winningBid.amount,
+          deliveryDays: winningBid.deliveryDays,
+        });
+        await Promise.all([
+          fiverrApi.holdEscrow({
+            orderId: order.id,
+            grossAmount: winningBid.amount,
+          }),
+          fiverrApi.sendNotification({
+            type: "ORDER_CREATED",
+            title: `Job Awarded: ${order.orderNumber}`,
+            message: `Escrow of $${winningBid.amount.toLocaleString()} locked for ${winningBid.bidderName} on "${activeJob.title}".`,
+            channel: "IN_APP",
+          }),
+        ]);
+        setAwardedOrderId(order.id);
+        createdOrderNumber = order.orderNumber;
+      }
       setFeedback({
         ok: true,
-        text: "Project awarded and escrow contract locked for the winning freelancer!",
+        text: createdOrderNumber
+          ? `Project awarded to ${winningBid?.bidderName}! Escrow Order ${createdOrderNumber} created and locked.`
+          : "Project awarded and escrow contract locked for the winning freelancer!",
       });
     }
   }
@@ -180,6 +236,15 @@ export default function JobBiddingDetailPage() {
           }`}
         >
           <span>{feedback.text}</span>
+          {feedback.ok && awardedOrderId && (
+            <Link
+              href={`/orders?order=${encodeURIComponent(awardedOrderId)}`}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#0a4226] px-3 py-1.5 text-white hover:bg-[#1dbf73]"
+            >
+              <span>View Escrow Order</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
           {!feedback.ok && loggedIn && (
             <Link
               href="/credits"
@@ -410,13 +475,13 @@ export default function JobBiddingDetailPage() {
                   </p>
                   <div className="grid grid-cols-2 gap-2.5 pt-2">
                     <Link
-                      href="/register"
+                      href={`/register?next=${encodeURIComponent(`/jobs/${job.id}`)}`}
                       className="rounded-xl bg-[#1dbf73] py-2.5 text-xs font-bold text-white hover:bg-[#19a463]"
                     >
                       Join Free (+100)
                     </Link>
                     <Link
-                      href="/login"
+                      href={`/login?next=${encodeURIComponent(`/jobs/${job.id}`)}`}
                       className="rounded-xl border border-gray-300 py-2.5 text-xs font-bold text-gray-800 hover:bg-gray-50"
                     >
                       Sign In

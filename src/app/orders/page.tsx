@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ShieldCheck,
   Clock,
@@ -12,117 +13,166 @@ import {
   Lock,
   ArrowUpRight,
   AlertCircle,
+  MessageSquare,
+  Search,
+  Star,
+  XCircle,
 } from "lucide-react";
 import {
+  FIVERREX_DATA_EVENT,
   SEED_ORDERS,
   SEED_ESCROW_TRANSACTIONS,
   fiverrApi,
+  getStoredEscrows,
+  getStoredOrders,
   type Order,
   type OrderStatus,
   type EscrowTransactionItem,
 } from "@/lib/api";
 
-export default function OrdersWorkspacePage() {
+function OrdersWorkspaceContent() {
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>(SEED_ORDERS);
   const [escrows, setEscrows] = useState<EscrowTransactionItem[]>(SEED_ESCROW_TRANSACTIONS);
   const [selectedOrderId, setSelectedOrderId] = useState<string>(SEED_ORDERS[0].id);
+  const [statusFilter, setStatusFilter] = useState<"ALL" | OrderStatus>("ALL");
+  const [orderSearch, setOrderSearch] = useState<string>("");
   const [roleView, setRoleView] = useState<"BUYER" | "SELLER">("BUYER");
   const [deliveryInput, setDeliveryInput] = useState<string>("");
+  const [revisionOpen, setRevisionOpen] = useState<boolean>(false);
+  const [revisionReason, setRevisionReason] = useState<string>("");
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<boolean>(false);
 
   useEffect(() => {
+    const requestedOrderId = searchParams.get("order")?.trim();
+
     async function loadOrdersAndEscrow() {
       const [liveOrders, liveEscrows] = await Promise.all([
         fiverrApi.getOrders(),
         fiverrApi.getEscrowTransactions(),
       ]);
-      if (liveOrders && liveOrders.length > 0) {
-        setOrders(liveOrders);
-        setSelectedOrderId((prev) =>
-          liveOrders.some((o) => o.id === prev) ? prev : liveOrders[0].id
-        );
+      const list = liveOrders && liveOrders.length > 0 ? liveOrders : getStoredOrders();
+      setOrders(list);
+      if (requestedOrderId && list.some((o) => o.id === requestedOrderId)) {
+        setSelectedOrderId(requestedOrderId);
+      } else {
+        setSelectedOrderId((prev) => (list.some((o) => o.id === prev) ? prev : list[0]?.id || ""));
       }
       if (liveEscrows && liveEscrows.length > 0) {
         setEscrows(liveEscrows);
       }
     }
     loadOrdersAndEscrow();
-  }, []);
 
-  const activeOrder = orders.find((o) => o.id === selectedOrderId) || orders[0];
-  const activeEscrow = escrows.find((e) => e.orderId === activeOrder.id);
+    const syncLocal = () => {
+      setOrders(getStoredOrders());
+      setEscrows(getStoredEscrows());
+    };
+    window.addEventListener(FIVERREX_DATA_EVENT, syncLocal);
+    return () => window.removeEventListener(FIVERREX_DATA_EVENT, syncLocal);
+  }, [searchParams]);
 
-  function updateOrderStatus(orderId: string, newStatus: OrderStatus, note?: string) {
-    setOrders((prev) =>
-      prev.map((ord) => {
-        if (ord.id !== orderId) return ord;
-        return {
-          ...ord,
-          status: newStatus,
-          deliveryNote: note ?? ord.deliveryNote,
-          deliveredAt: newStatus === "DELIVERED" ? new Date().toISOString() : ord.deliveredAt,
-          completedAt: newStatus === "COMPLETED" ? new Date().toISOString() : ord.completedAt,
-          revisionsUsed:
-            newStatus === "REVISION_REQUESTED" ? ord.revisionsUsed + 1 : ord.revisionsUsed,
-        };
-      })
-    );
-  }
+  const filteredOrders = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    return orders.filter((ord) => {
+      if (statusFilter !== "ALL" && ord.status !== statusFilter) return false;
+      if (q) {
+        return (
+          ord.orderNumber.toLowerCase().includes(q) ||
+          ord.gigTitle.toLowerCase().includes(q) ||
+          ord.sellerName.toLowerCase().includes(q) ||
+          ord.buyerName.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [orders, statusFilter, orderSearch]);
+
+  const activeOrder =
+    orders.find((o) => o.id === selectedOrderId) || filteredOrders[0] || orders[0];
+  const activeEscrow = escrows.find((e) => e.orderId === activeOrder?.id);
 
   async function handleSubmitDelivery(e: React.FormEvent) {
     e.preventDefault();
+    if (!activeOrder) return;
     setBusyAction(true);
     const note =
       deliveryInput.trim() ||
       "Updated build artifacts and Helm release manifests uploaded for verification.";
-    const updated = await fiverrApi.deliverOrder(activeOrder.id, {
+    await fiverrApi.deliverOrder(activeOrder.id, {
       sellerId: activeOrder.sellerId,
       deliveryNote: note,
       deliverableUrl: "https://github.com/fiverrex/deliverables-release-v1.zip",
     });
-    updateOrderStatus(activeOrder.id, updated.status || "DELIVERED", note);
+    await fiverrApi.sendNotification({
+      type: "ORDER_DELIVERED",
+      title: `Delivery Submitted (${activeOrder.orderNumber})`,
+      message: `${activeOrder.sellerName} submitted deliverables for "${activeOrder.gigTitle}".`,
+      channel: "IN_APP",
+    });
+    setOrders(getStoredOrders());
     setDeliveryInput("");
     setBusyAction(false);
-    setActionToast(
-      `Order ${activeOrder.orderNumber} marked as DELIVERED via POST /api/v1/orders/${activeOrder.id.slice(
-        0,
-        8
-      )}/deliver!`
-    );
+    setActionToast(`Order ${activeOrder.orderNumber} marked as DELIVERED and buyer notified!`);
   }
 
-  async function handleRequestRevision() {
+  async function handleRequestRevision(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (!activeOrder) return;
     setBusyAction(true);
-    const updated = await fiverrApi.requestRevision(activeOrder.id, {
+    const reason =
+      revisionReason.trim() ||
+      "Please add additional integration test coverage and deployment documentation.";
+    await fiverrApi.requestRevision(activeOrder.id, {
       buyerId: activeOrder.buyerId,
-      reason: "Please add additional integration test coverage and Helm values documentation.",
+      reason,
     });
-    updateOrderStatus(activeOrder.id, updated.status || "REVISION_REQUESTED");
+    setOrders(getStoredOrders());
+    setRevisionReason("");
+    setRevisionOpen(false);
     setBusyAction(false);
-    setActionToast(
-      `Revision requested on ${activeOrder.orderNumber} via POST /api/v1/orders/${activeOrder.id.slice(
-        0,
-        8
-      )}/revisions.`
-    );
+    setActionToast(`Revision requested on ${activeOrder.orderNumber}. Seller has been notified.`);
   }
 
   async function handleApproveAndReleaseEscrow() {
+    if (!activeOrder) return;
     setBusyAction(true);
-    const [, releasedEscrow] = await Promise.all([
+    await Promise.all([
       fiverrApi.completeOrder(activeOrder.id, activeOrder.buyerId),
       fiverrApi.releaseEscrow(activeOrder.id),
+      fiverrApi.sendNotification({
+        type: "ESCROW_RELEASED",
+        title: `Escrow Released (${activeOrder.orderNumber})`,
+        message: `$${activeOrder.totalEscrow.toFixed(2)} released to ${activeOrder.sellerName}'s Seller Studio wallet.`,
+        channel: "IN_APP",
+      }),
     ]);
-    updateOrderStatus(activeOrder.id, "COMPLETED");
-    setEscrows((prev) =>
-      prev.map((e) => (e.orderId === activeOrder.id ? { ...e, status: releasedEscrow.status } : e))
-    );
+    setOrders(getStoredOrders());
+    setEscrows(getStoredEscrows());
     setBusyAction(false);
     window.dispatchEvent(new CustomEvent("fiverrex-session-change"));
     setActionToast(
-      `Escrow of $${activeOrder.totalEscrow.toFixed(2)} released to ${activeOrder.sellerName}'s wallet via POST /api/v1/payments/escrow/release!`
+      `Escrow of $${activeOrder.totalEscrow.toFixed(2)} released to ${activeOrder.sellerName}'s wallet!`
     );
+  }
+
+  async function handleCancelOrder() {
+    if (!activeOrder || activeOrder.status === "COMPLETED" || activeOrder.status === "CANCELLED") {
+      return;
+    }
+    setBusyAction(true);
+    await fiverrApi.cancelOrder(activeOrder.id);
+    await fiverrApi.sendNotification({
+      type: "ORDER_CANCELLED",
+      title: `Order Cancelled & Refunded (${activeOrder.orderNumber})`,
+      message: `Escrow deposit of $${activeOrder.totalEscrow.toFixed(2)} has been refunded.`,
+      channel: "IN_APP",
+    });
+    setOrders(getStoredOrders());
+    setEscrows(getStoredEscrows());
+    setBusyAction(false);
+    setActionToast(`Order ${activeOrder.orderNumber} cancelled and escrow refunded.`);
   }
 
   const timelineSteps: { key: OrderStatus; label: string; desc: string }[] = [
@@ -218,54 +268,93 @@ export default function OrdersWorkspacePage() {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* Left List of Orders */}
         <div className="space-y-3 lg:col-span-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-            Active &amp; Recent Orders ({orders.length})
-          </h2>
-          {orders.map((ord) => {
-            const isSelected = ord.id === activeOrder.id;
-            return (
-              <button
-                key={ord.id}
-                type="button"
-                onClick={() => setSelectedOrderId(ord.id)}
-                className={`w-full rounded-xl border p-4 text-left transition ${
-                  isSelected
-                    ? "border-[#1dbf73] bg-emerald-50/40 ring-2 ring-[#1dbf73]/20"
-                    : "border-gray-200 bg-white hover:border-gray-300"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-extrabold text-gray-900">
-                    {ord.orderNumber}
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
-                      ord.status === "COMPLETED"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : ord.status === "DELIVERED"
-                        ? "bg-amber-100 text-amber-800"
-                        : ord.status === "REVISION_REQUESTED"
-                        ? "bg-rose-100 text-rose-800"
-                        : "bg-blue-100 text-blue-800"
+          <div className="space-y-2.5 rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="Search order # or service..."
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-xs text-gray-800 focus:border-[#1dbf73] focus:bg-white focus:outline-none"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {(["ALL", "IN_PROGRESS", "DELIVERED", "REVISION_REQUESTED", "COMPLETED", "CANCELLED"] as const).map(
+                (st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStatusFilter(st)}
+                    className={`rounded-md px-2 py-1 text-[10px] font-bold transition ${
+                      statusFilter === st
+                        ? "bg-[#0a4226] text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >
-                    {ord.status.replace("_", " ")}
-                  </span>
-                </div>
-                <p className="mt-2 line-clamp-2 text-xs font-bold text-gray-800">
-                  {ord.gigTitle}
-                </p>
-                <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2 text-[11px] text-gray-500">
-                  <span>
-                    {ord.packageTier} • Seller: @{ord.sellerUsername}
-                  </span>
-                  <span className="font-extrabold text-gray-900">
-                    ${ord.totalEscrow.toFixed(2)}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
+                    {st === "ALL" ? `All (${orders.length})` : st.replace("_", " ")}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+            Matching Orders ({filteredOrders.length})
+          </h2>
+          {filteredOrders.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-6 text-center text-xs text-gray-500">
+              No orders match this filter.
+            </div>
+          ) : (
+            filteredOrders.map((ord) => {
+              const isSelected = ord.id === activeOrder.id;
+              return (
+                <button
+                  key={ord.id}
+                  type="button"
+                  onClick={() => setSelectedOrderId(ord.id)}
+                  className={`w-full rounded-xl border p-4 text-left transition ${
+                    isSelected
+                      ? "border-[#1dbf73] bg-emerald-50/40 ring-2 ring-[#1dbf73]/20"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-extrabold text-gray-900">
+                      {ord.orderNumber}
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
+                        ord.status === "COMPLETED"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : ord.status === "DELIVERED"
+                          ? "bg-amber-100 text-amber-800"
+                          : ord.status === "REVISION_REQUESTED"
+                          ? "bg-rose-100 text-rose-800"
+                          : ord.status === "CANCELLED"
+                          ? "bg-gray-200 text-gray-600"
+                          : "bg-blue-100 text-blue-800"
+                      }`}
+                    >
+                      {ord.status.replace("_", " ")}
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-xs font-bold text-gray-800">
+                    {ord.gigTitle}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+                    <span>
+                      {ord.packageTier} • Seller: @{ord.sellerUsername}
+                    </span>
+                    <span className="font-extrabold text-gray-900">
+                      ${ord.totalEscrow.toFixed(2)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
 
         {/* Right Order Detail & Escrow Action Panel */}
@@ -437,37 +526,106 @@ export default function OrdersWorkspacePage() {
                     Buyer Escrow Controls
                   </h4>
                   {activeOrder.status === "COMPLETED" ? (
-                    <div className="rounded-xl bg-emerald-50 p-4 text-xs font-bold text-emerald-900">
-                      This order is COMPLETED and the ${activeOrder.totalEscrow.toFixed(2)} escrow
-                      has been released to the seller.
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-emerald-50 p-4 text-xs font-bold text-emerald-900">
+                      <span>
+                        This order is COMPLETED and the ${activeOrder.totalEscrow.toFixed(2)} escrow
+                        has been released to the seller.
+                      </span>
+                      <Link
+                        href={`/gigs/${activeOrder.gigId}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#1dbf73] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#19a463]"
+                      >
+                        <Star className="h-3.5 w-3.5" />
+                        <span>Leave Verified Review</span>
+                      </Link>
+                    </div>
+                  ) : activeOrder.status === "CANCELLED" ? (
+                    <div className="rounded-xl bg-gray-100 p-4 text-xs font-bold text-gray-700">
+                      This order was CANCELLED and the ${activeOrder.totalEscrow.toFixed(2)} escrow
+                      deposit has been refunded.
                     </div>
                   ) : (
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        disabled={busyAction}
-                        onClick={handleApproveAndReleaseEscrow}
-                        className="inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#19a463] disabled:opacity-50"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span>
-                          {busyAction
-                            ? "Releasing Escrow..."
-                            : `Approve Delivery & Release Escrow ($${activeOrder.totalEscrow.toFixed(
-                                2
-                              )})`}
-                        </span>
-                      </button>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          disabled={busyAction}
+                          onClick={handleApproveAndReleaseEscrow}
+                          className="inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#19a463] disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>
+                            {busyAction
+                              ? "Releasing Escrow..."
+                              : `Approve Delivery & Release Escrow ($${activeOrder.totalEscrow.toFixed(
+                                  2
+                                )})`}
+                          </span>
+                        </button>
 
-                      <button
-                        type="button"
-                        disabled={busyAction}
-                        onClick={handleRequestRevision}
-                        className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <RefreshCw className="h-4 w-4 text-amber-600" />
-                        <span>Request Revision</span>
-                      </button>
+                        <button
+                          type="button"
+                          disabled={busyAction}
+                          onClick={() => setRevisionOpen((prev) => !prev)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <RefreshCw className="h-4 w-4 text-amber-600" />
+                          <span>Request Revision</span>
+                        </button>
+
+                        <Link
+                          href={`/inbox?seller=${encodeURIComponent(activeOrder.sellerUsername)}&gig=${encodeURIComponent(activeOrder.gigId)}`}
+                          className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-xs font-bold text-gray-700 transition hover:border-[#1dbf73] hover:text-[#0a4226]"
+                        >
+                          <MessageSquare className="h-4 w-4 text-[#1dbf73]" />
+                          <span>Message Seller</span>
+                        </Link>
+
+                        <button
+                          type="button"
+                          disabled={busyAction}
+                          onClick={handleCancelOrder}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          <span>Cancel &amp; Refund</span>
+                        </button>
+                      </div>
+
+                      {revisionOpen && (
+                        <form
+                          onSubmit={handleRequestRevision}
+                          className="space-y-2.5 rounded-xl border border-amber-200 bg-amber-50/60 p-4"
+                        >
+                          <label className="block text-xs font-bold text-amber-950">
+                            Describe what needs to be revised:
+                          </label>
+                          <textarea
+                            rows={2}
+                            required
+                            value={revisionReason}
+                            onChange={(e) => setRevisionReason(e.target.value)}
+                            placeholder="e.g. Please add integration tests for the refund flow and update README steps..."
+                            className="w-full rounded-lg border border-amber-300 bg-white p-2.5 text-xs focus:border-[#1dbf73] focus:outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="submit"
+                              disabled={busyAction}
+                              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                            >
+                              Send Revision Request
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRevisionOpen(false)}
+                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      )}
                     </div>
                   )}
                 </div>
@@ -500,5 +658,13 @@ export default function OrdersWorkspacePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function OrdersWorkspacePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#f8fafc]" />}>
+      <OrdersWorkspaceContent />
+    </Suspense>
   );
 }

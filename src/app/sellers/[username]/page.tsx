@@ -140,6 +140,7 @@ export default function SellerProfilePage() {
     setSendingMessage(true);
     await fiverrApi.sendMessage({
       recipientId: profile.accountId || profile.id,
+      recipientUsername: profile.username,
       gigId: displayedGigs[0]?.id,
       content: inquiryMessage.trim(),
       messageType: "TEXT",
@@ -148,11 +149,11 @@ export default function SellerProfilePage() {
     setInquiryMessage("");
     setContactModalOpen(false);
     setStatusToast(
-      `Message sent to @${profile.username} via POST /api/v1/messages! Redirecting to Inbox...`
+      `Message sent to @${profile.username}! Opening conversation in Inbox...`
     );
     setTimeout(() => {
-      router.push("/inbox");
-    }, 900);
+      router.push(`/inbox?seller=${encodeURIComponent(profile.username)}`);
+    }, 650);
   }
 
   return (
