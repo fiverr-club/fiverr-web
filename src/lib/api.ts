@@ -245,6 +245,7 @@ export const API_GATEWAY_URL =
 export const GATEWAY_ROOT_URL = API_GATEWAY_URL.replace(/\/api\/v1\/?$/, "");
 
 const SESSION_STORAGE_KEY = "fiverrex_session";
+const REGISTERED_ACCOUNTS_STORAGE_KEY = "fiverrex_registered_accounts";
 
 export const DEFAULT_AUTH_ACCOUNTS: AuthAccountDto[] = [
   {
@@ -314,6 +315,49 @@ export function getDefaultAuthSession(): AuthSession {
   };
 }
 
+export function isLoggedIn(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as AuthSession;
+    return Boolean(parsed?.account?.id);
+  } catch {
+    return false;
+  }
+}
+
+export function getRegisteredAccounts(): AuthAccountDto[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(REGISTERED_ACCOUNTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as AuthAccountDto[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRegisteredAccount(account: AuthAccountDto): void {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = getRegisteredAccounts().filter(
+      (a) =>
+        a.username.toLowerCase() !== account.username.toLowerCase() &&
+        a.email.toLowerCase() !== account.email.toLowerCase()
+    );
+    window.localStorage.setItem(
+      REGISTERED_ACCOUNTS_STORAGE_KEY,
+      JSON.stringify([account, ...existing])
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
 export function getAuthSession(): AuthSession {
   if (typeof window === "undefined") {
     return getDefaultAuthSession();
@@ -354,16 +398,20 @@ export function clearAuthSession(): void {
 export function buildSessionForAccount(
   account: AuthAccountDto,
   accessToken = "",
-  refreshToken = ""
+  refreshToken = "",
+  displayNameOverride?: string
 ): AuthSession {
   const meta = ACCOUNT_PROFILE_META[account.id] || {
-    displayName: account.username
-      .split("_")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" "),
+    displayName:
+      displayNameOverride?.trim() ||
+      account.username
+        .split(/[_.-]/)
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" "),
     avatarUrl:
       "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
-    profileId: "aaaaaaaa-3333-3333-3333-333333333333",
+    profileId: `profile-${account.id}`,
     sellerId: "11111111-1111-1111-1111-111111111111",
   };
   return {
@@ -372,7 +420,7 @@ export function buildSessionForAccount(
     account,
     sellerId: meta.sellerId,
     profileId: meta.profileId,
-    displayName: meta.displayName,
+    displayName: displayNameOverride?.trim() || meta.displayName,
     avatarUrl: meta.avatarUrl,
   };
 }
@@ -1880,12 +1928,23 @@ export const fiverrApi = {
     emailOrUsername: string;
     password: string;
   }): Promise<AuthSession> {
+    const allKnownAccounts = [...getRegisteredAccounts(), ...DEFAULT_AUTH_ACCOUNTS];
+    const query = payload.emailOrUsername.trim().toLowerCase();
     const matchedAccount =
-      DEFAULT_AUTH_ACCOUNTS.find(
-        (a) =>
-          a.username.toLowerCase() === payload.emailOrUsername.toLowerCase() ||
-          a.email.toLowerCase() === payload.emailOrUsername.toLowerCase()
-      ) || DEFAULT_AUTH_ACCOUNTS[0];
+      allKnownAccounts.find(
+        (a) => a.username.toLowerCase() === query || a.email.toLowerCase() === query
+      ) || {
+        id: `user-${query.replace(/[^a-z0-9]/g, "") || Date.now()}`,
+        username: payload.emailOrUsername.includes("@")
+          ? payload.emailOrUsername.split("@")[0]
+          : payload.emailOrUsername.trim(),
+        email: payload.emailOrUsername.includes("@")
+          ? payload.emailOrUsername.trim()
+          : `${payload.emailOrUsername.trim()}@fiverrex.club`,
+        roles: ["BUYER", "SELLER"],
+        status: "ACTIVE",
+        emailVerified: true,
+      };
 
     const fallbackResponse = {
       accessToken: `eyJhbGciOiJIUzI1NiJ9.${matchedAccount.id}`,
@@ -1917,10 +1976,12 @@ export const fiverrApi = {
     username: string;
     email: string;
     password: string;
+    displayName?: string;
     roles?: string[];
   }): Promise<AuthSession> {
+    const generatedId = `user-${Date.now()}`;
     const fallbackAccount: AuthAccountDto = {
-      id: "33333333-3333-3333-3333-333333333333",
+      id: generatedId,
       username: payload.username,
       email: payload.email,
       roles: payload.roles || ["BUYER", "SELLER"],
@@ -1950,10 +2011,14 @@ export const fiverrApi = {
       }
     );
 
+    const resolvedAccount = res.account || fallbackAccount;
+    saveRegisteredAccount(resolvedAccount);
+
     const session = buildSessionForAccount(
-      res.account || fallbackAccount,
+      resolvedAccount,
       res.accessToken,
-      res.refreshToken
+      res.refreshToken,
+      payload.displayName
     );
     setAuthSession(session);
     return session;

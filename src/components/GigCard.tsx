@@ -29,7 +29,7 @@ export function GigCard({ gig }: { gig: Gig }) {
   }
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+    <div className="group flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md">
       {/* Thumbnail */}
       <Link href={`/gigs/${gig.id}`} className="relative block aspect-[16/10] w-full overflow-hidden bg-gray-100">
         <img
@@ -37,14 +37,14 @@ export function GigCard({ gig }: { gig: Gig }) {
           alt={gig.title}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
-        <div className="absolute left-3 top-3 flex gap-1.5">
+        <div className="absolute left-3 right-12 top-3 flex flex-wrap items-center gap-1.5">
           {isPro && (
-            <span className="inline-flex items-center gap-1 rounded bg-indigo-950/90 px-2.5 py-1 text-[11px] font-bold text-white shadow">
-              <Award className="h-3 w-3 text-[#1dbf73]" />
+            <span className="inline-flex items-center gap-1 rounded-md bg-indigo-950/90 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
+              <Award className="h-3 w-3 shrink-0 text-[#1dbf73]" />
               Pro Verified
             </span>
           )}
-          <span className="rounded bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+          <span className="truncate rounded-md bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
             {gig.category}
           </span>
         </div>
@@ -52,7 +52,7 @@ export function GigCard({ gig }: { gig: Gig }) {
           type="button"
           onClick={handleToggleSave}
           aria-label={saved ? "Remove from saved gigs" : "Save to favorites"}
-          className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow transition hover:scale-105 ${
+          className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow-sm transition hover:scale-105 ${
             saved ? "text-rose-500" : "text-gray-600 hover:text-rose-500"
           }`}
         >
@@ -67,22 +67,22 @@ export function GigCard({ gig }: { gig: Gig }) {
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <Link
               href={`/sellers/${gig.seller.username}`}
-              className="flex items-center gap-2 rounded-lg transition hover:opacity-85"
+              className="flex min-w-0 items-center gap-2 rounded-lg transition hover:opacity-85"
             >
               <img
                 src={gig.seller.avatarUrl}
                 alt={gig.seller.displayName}
-                className="h-7 w-7 rounded-full object-cover ring-1 ring-gray-200"
+                className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-gray-200"
               />
-              <div>
-                <p className="text-xs font-bold text-gray-900 hover:text-[#1dbf73]">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-bold text-gray-900 hover:text-[#1dbf73]">
                   {gig.seller.displayName}
                 </p>
-                <p className="text-[11px] text-gray-500">@{gig.seller.username}</p>
+                <p className="truncate text-[11px] text-gray-500">@{gig.seller.username}</p>
               </div>
             </Link>
             <span
-              className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold ${
+              className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold ${
                 isTopRated
                   ? "bg-amber-100 text-amber-800"
                   : isPro
@@ -97,13 +97,13 @@ export function GigCard({ gig }: { gig: Gig }) {
           {/* Title */}
           <Link
             href={`/gigs/${gig.id}`}
-            className="line-clamp-2 text-sm font-semibold leading-snug text-gray-800 transition-colors group-hover:text-[#1dbf73]"
+            className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug text-gray-800 transition-colors group-hover:text-[#1dbf73]"
           >
             {gig.title}
           </Link>
 
           {/* Rating & Delivery */}
-          <div className="mt-3 flex items-center justify-between text-xs">
+          <div className="mt-3 flex items-center justify-between text-xs tabular-nums">
             <div className="flex items-center gap-1">
               <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
               <span className="font-bold text-gray-900">{gig.rating.toFixed(1)}</span>
@@ -117,8 +117,8 @@ export function GigCard({ gig }: { gig: Gig }) {
         </div>
 
         {/* Footer Price */}
-        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-          <div className="flex flex-wrap gap-1">
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
+          <div className="flex min-w-0 flex-wrap gap-1">
             {gig.tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
@@ -128,7 +128,7 @@ export function GigCard({ gig }: { gig: Gig }) {
               </span>
             ))}
           </div>
-          <div className="text-right">
+          <div className="shrink-0 text-right tabular-nums">
             <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">
               From
             </span>

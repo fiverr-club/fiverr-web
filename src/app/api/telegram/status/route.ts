@@ -1,0 +1,32 @@
+import { NextResponse } from "next/server";
+import { SEED_JOBS } from "@/lib/jobs";
+import { fetchBotHealthStatus, getTelegramConfig } from "@/lib/telegram";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const config = getTelegramConfig();
+  if (!config) {
+    return NextResponse.json(
+      { ok: false, configured: false, error: "TELEGRAM_BOT_TOKEN is not set." },
+      { status: 503 }
+    );
+  }
+
+  const res = await fetchBotHealthStatus(config, {
+    totalItems: SEED_JOBS.length,
+    intervalMinutes: 10,
+    itemType: "jobs",
+  });
+  return NextResponse.json(
+    {
+      ...res.body,
+      reactions: {
+        autoReact: true,
+        scope: "commands, mentions, job-topics, and DMs",
+        primaryEmoji: "❤️",
+      },
+    },
+    { status: res.status }
+  );
+}

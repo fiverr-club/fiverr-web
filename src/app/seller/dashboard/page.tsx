@@ -68,6 +68,16 @@ export default function SellerDashboardPage() {
     loadSellerStudio();
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setCreateModalOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   async function handleWithdrawFunds() {
     if (stats.availableForWithdrawal <= 0 || withdrawing) return;
     setWithdrawing(true);
@@ -127,7 +137,7 @@ export default function SellerDashboardPage() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={handleWithdrawFunds}
@@ -190,7 +200,7 @@ export default function SellerDashboardPage() {
             ${stats.escrowPendingBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
           </p>
           <p className="mt-2 text-[11px] text-gray-500">
-            Locked in `fiverr-payment-service` active orders
+            Locked in active escrow orders
           </p>
         </div>
 
@@ -227,7 +237,7 @@ export default function SellerDashboardPage() {
         {/* Level Metrics */}
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm lg:col-span-5">
           <h2 className="text-base font-extrabold text-gray-900">
-            Seller Level Standards (`fiverr-user-service`)
+            Seller Level Standards
           </h2>
           <p className="mt-1 text-xs text-gray-500">
             Maintain 90%+ across all 4 metrics to retain Top Rated Seller status.
@@ -302,7 +312,7 @@ export default function SellerDashboardPage() {
                 key={ord.id}
                 className="flex flex-wrap items-center justify-between gap-4 py-3.5 text-xs"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <img
                     src={ord.gigThumbnail}
                     alt={ord.gigTitle}
@@ -352,7 +362,7 @@ export default function SellerDashboardPage() {
               Active Gigs ({myGigs.length})
             </h2>
             <p className="text-xs text-gray-500">
-              Managed via `fiverr-gig-service` with 3-Tier Pricing (Basic / Standard / Premium)
+              3-Tier Pricing packages (Basic / Standard / Premium)
             </p>
           </div>
           <button
@@ -400,12 +410,19 @@ export default function SellerDashboardPage() {
 
       {/* Create New Gig Modal */}
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div
+          onClick={() => setCreateModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
-              <h3 className="text-sm font-bold">Publish New 3-Tier Gig (`fiverr-gig-service`)</h3>
+              <h3 className="text-sm font-bold">Publish New 3-Tier Gig</h3>
               <button
                 type="button"
+                aria-label="Close create gig modal"
                 onClick={() => setCreateModalOpen(false)}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10"
               >

@@ -138,7 +138,7 @@ export default function FavoritesWishlistPage() {
               </p>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
+              <table className="w-full min-w-[680px] border-collapse text-left text-xs">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
                     <th className="p-4 font-bold">Gig &amp; Seller</th>

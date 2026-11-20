@@ -96,6 +96,16 @@ export default function GigDetailPage() {
     };
   }, [gigId]);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setCheckoutOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const activePackage = gig.packages[selectedTier] || gig.packages.Standard;
   const serviceFee = Number((activePackage.price * 0.055).toFixed(2));
   const totalEscrow = Number((activePackage.price + serviceFee).toFixed(2));
@@ -248,7 +258,15 @@ export default function GigDetailPage() {
                     <span className="text-sm font-bold text-gray-900 hover:text-[#1dbf73]">
                       {gig.seller.displayName}
                     </span>
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                    <span
+                      className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+                        gig.seller.level === "Top Rated Seller"
+                          ? "bg-amber-100 text-amber-800"
+                          : gig.seller.level === "Pro Verified"
+                          ? "bg-indigo-100 text-indigo-800"
+                          : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
                       {gig.seller.level}
                     </span>
                   </div>
@@ -256,9 +274,9 @@ export default function GigDetailPage() {
                 </div>
               </Link>
 
-              <div className="h-5 w-px bg-gray-200" />
+              <div className="hidden h-5 w-px bg-gray-200 sm:block" />
 
-              <div className="flex items-center gap-1 text-sm">
+              <div className="flex items-center gap-1 text-sm tabular-nums">
                 <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                 <span className="font-bold text-gray-900">{gig.rating.toFixed(1)}</span>
                 <span className="text-gray-500">({gig.reviewCount + reviews.length} reviews)</span>
@@ -280,13 +298,13 @@ export default function GigDetailPage() {
               />
             </div>
             {gig.galleryUrls.length > 1 && (
-              <div className="flex gap-3">
+              <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
                 {gig.galleryUrls.map((url, idx) => (
                   <button
                     key={url}
                     type="button"
                     onClick={() => setSelectedImageIdx(idx)}
-                    className={`overflow-hidden rounded-lg border-2 transition ${
+                    className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${
                       selectedImageIdx === idx
                         ? "border-[#1dbf73] ring-2 ring-[#1dbf73]/30"
                         : "border-transparent opacity-70 hover:opacity-100"
@@ -494,7 +512,7 @@ export default function GigDetailPage() {
                   Verified Buyer Reviews ({gig.reviewCount + reviews.length})
                 </h2>
                 <p className="text-xs text-gray-500">
-                  3-Criteria Rating powered by `fiverr-review-service`
+                  3-Criteria Rating verified against completed escrow orders
                 </p>
               </div>
               <div className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5">
@@ -542,9 +560,9 @@ export default function GigDetailPage() {
               onSubmit={handleSubmitReview}
               className="mt-6 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0a4226]">
-                  Write a Verified 3-Criteria Review (`POST /api/v1/reviews`)
+                  Write a Verified 3-Criteria Review
                 </h3>
                 {reviewToast && (
                   <span className="text-[11px] font-bold text-[#1dbf73]">{reviewToast}</span>
@@ -666,7 +684,7 @@ export default function GigDetailPage() {
                               type="text"
                               value={sellerReplyText}
                               onChange={(e) => setSellerReplyText(e.target.value)}
-                              placeholder="Write official seller response (`POST /api/v1/reviews/{id}/seller-response`)..."
+                              placeholder="Write official seller response..."
                               className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:border-[#1dbf73] focus:outline-none"
                             />
                             <button
@@ -788,8 +806,8 @@ export default function GigDetailPage() {
               <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-emerald-50/70 p-3 text-[11px] text-emerald-900">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#1dbf73]" />
                 <div>
-                  <span className="font-bold">FIVERREX Escrow Guarantee:</span> Funds are held in
-                  `fiverr-payment-service` and only released after you approve the final delivery.
+                  <span className="font-bold">FIVERREX Escrow Guarantee:</span> Funds are held
+                  securely in escrow and only released after you approve the final delivery.
                 </div>
               </div>
             </div>
@@ -821,8 +839,14 @@ export default function GigDetailPage() {
 
       {/* Checkout / Escrow Creation Modal */}
       {checkoutOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div
+          onClick={() => setCheckoutOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
               <div className="flex items-center gap-2">
                 <Lock className="h-4 w-4 text-[#1dbf73]" />
@@ -830,6 +854,7 @@ export default function GigDetailPage() {
               </div>
               <button
                 type="button"
+                aria-label="Close checkout modal"
                 onClick={() => setCheckoutOpen(false)}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10 hover:text-white"
               >
@@ -847,8 +872,9 @@ export default function GigDetailPage() {
                 </h4>
                 <p className="text-xs text-gray-600">
                   Order <span className="font-mono font-bold text-gray-900">{orderSuccessNumber}</span>{" "}
-                  has been dispatched via `fiverr-order-service` and `$
-                  {totalEscrow.toFixed(2)}` is locked in Escrow.
+                  has been created and{" "}
+                  <span className="font-bold text-gray-900">${totalEscrow.toFixed(2)}</span> is
+                  locked in Escrow.
                 </p>
                 <div className="flex gap-3 pt-2">
                   <button

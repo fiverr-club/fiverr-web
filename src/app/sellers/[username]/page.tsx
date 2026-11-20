@@ -77,6 +77,17 @@ export default function SellerProfilePage() {
     loadSellerData();
   }, [rawUsername]);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setEditModalOpen(false);
+        setContactModalOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const sellerGigs = gigs.filter(
     (g) =>
       resolveCanonicalUsername(g.seller.username) ===
@@ -229,7 +240,7 @@ export default function SellerProfilePage() {
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white py-2.5 text-xs font-bold text-gray-700 transition hover:border-gray-900"
                 >
                   <Edit3 className="h-3.5 w-3.5 text-[#1dbf73]" />
-                  <span>Edit Profile (`PUT /api/v1/profiles`)</span>
+                  <span>Edit Profile</span>
                 </button>
               </div>
             </div>
@@ -308,8 +319,8 @@ export default function SellerProfilePage() {
               <span>100% Escrow Protected Seller</span>
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-emerald-800">
-              All orders placed with {profile.displayName} are protected by `fiverr-payment-service`
-              escrow until milestone completion.
+              All orders placed with {profile.displayName} are protected by escrow until milestone
+              completion.
             </p>
           </div>
         </div>
@@ -398,14 +409,19 @@ export default function SellerProfilePage() {
 
       {/* Edit Profile Modal */}
       {editModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div
+          onClick={() => setEditModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
-              <h3 className="text-sm font-bold">
-                Update Seller Profile (`PUT /api/v1/profiles/{profile.id.slice(0, 8)}...`)
-              </h3>
+              <h3 className="text-sm font-bold">Update Seller Profile</h3>
               <button
                 type="button"
+                aria-label="Close edit profile modal"
                 onClick={() => setEditModalOpen(false)}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10"
               >
@@ -494,12 +510,19 @@ export default function SellerProfilePage() {
 
       {/* Contact / Custom Offer Modal */}
       {contactModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div
+          onClick={() => setContactModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
               <h3 className="text-sm font-bold">Message {profile.displayName}</h3>
               <button
                 type="button"
+                aria-label="Close contact modal"
                 onClick={() => setContactModalOpen(false)}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10"
               >
@@ -509,8 +532,7 @@ export default function SellerProfilePage() {
             <form onSubmit={handleSendDirectInquiry} className="space-y-4 p-6">
               <p className="text-xs text-gray-600">
                 Send a direct project brief or custom offer inquiry to{" "}
-                <span className="font-bold text-gray-900">@{profile.username}</span> via{" "}
-                `POST /api/v1/messages`:
+                <span className="font-bold text-gray-900">@{profile.username}</span>:
               </p>
               <textarea
                 rows={4}

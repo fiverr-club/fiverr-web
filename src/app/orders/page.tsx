@@ -273,14 +273,14 @@ export default function OrdersWorkspacePage() {
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
             {/* Top Order Banner */}
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200 pb-5">
-              <div className="flex items-start gap-4">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
                 <img
                   src={activeOrder.gigThumbnail}
                   alt={activeOrder.gigTitle}
-                  className="h-16 w-24 rounded-lg object-cover"
+                  className="h-16 w-24 shrink-0 rounded-lg object-cover"
                 />
-                <div>
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-extrabold text-gray-900">
                       {activeOrder.orderNumber}
                     </span>
@@ -438,7 +438,7 @@ export default function OrdersWorkspacePage() {
                   </h4>
                   {activeOrder.status === "COMPLETED" ? (
                     <div className="rounded-xl bg-emerald-50 p-4 text-xs font-bold text-emerald-900">
-                      This order is COMPLETED and the $${activeOrder.totalEscrow.toFixed(2)} escrow
+                      This order is COMPLETED and the ${activeOrder.totalEscrow.toFixed(2)} escrow
                       has been released to the seller.
                     </div>
                   ) : (
@@ -474,7 +474,7 @@ export default function OrdersWorkspacePage() {
               ) : (
                 <form onSubmit={handleSubmitDelivery} className="space-y-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Seller Delivery Submission (`fiverr-order-service`)
+                    Seller Delivery Submission
                   </h4>
                   <textarea
                     rows={3}

@@ -16,6 +16,11 @@ import {
   Award,
   ChevronDown,
   Users,
+  X,
+  Briefcase,
+  Coins,
+  Gift,
+  Clock,
 } from "lucide-react";
 import {
   CATEGORIES,
@@ -28,6 +33,13 @@ import {
   type SellerLevel,
   type UserProfileDto,
 } from "@/lib/api";
+import {
+  getStoredJobs,
+  NEW_ACCOUNT_CREDITS,
+  REFERRAL_REWARD_CREDITS,
+  SEED_JOBS,
+  type JobProject,
+} from "@/lib/jobs";
 import { GigCard } from "@/components/GigCard";
 
 type SortOption =
@@ -40,7 +52,7 @@ type SortOption =
 const FAQ_ITEMS = [
   {
     q: "How does FIVERREX Payment Escrow protect my order?",
-    a: "When you place an order, funds are held in an isolated PostgreSQL escrow ledger inside `fiverr-payment-service`. The freelancer is only paid after you inspect the deliverables and click 'Approve & Release Escrow', which dispatches an `OrderCompletedEvent` over Apache Kafka.",
+    a: "When you place an order, funds are held securely in an isolated escrow ledger. The freelancer is only paid after you inspect the deliverables and click Approve & Release Escrow.",
   },
   {
     q: "What is the difference between Basic, Standard, and Premium packages?",
@@ -48,16 +60,17 @@ const FAQ_ITEMS = [
   },
   {
     q: "Can I request a custom milestone offer before ordering?",
-    a: "Yes! Visit any freelancer's profile or open the Real-Time Inbox (`/inbox`) to discuss your requirements and receive a tailored Custom Milestone Offer with custom pricing, delivery days, and revision allowances.",
+    a: "Yes! Visit any freelancer's profile or open the Real-Time Inbox to discuss your requirements and receive a tailored Custom Milestone Offer with custom pricing, delivery days, and revision allowances.",
   },
   {
     q: "How are FIVERREX sellers verified and rated?",
-    a: "All reviews are verified against completed escrow orders in `fiverr-review-service` across 3 weighted criteria: Seller Communication Level, Service as Described, and Buy Again / Recommend.",
+    a: "All reviews are verified against completed escrow orders across 3 weighted criteria: Seller Communication Level, Service as Described, and Buy Again / Recommend.",
   },
 ];
 
 export default function HomePage() {
   const [gigs, setGigs] = useState<Gig[]>(SEED_GIGS);
+  const [jobs, setJobs] = useState<JobProject[]>(SEED_JOBS);
   const [sellers, setSellers] = useState<UserProfileDto[]>(SEED_USER_PROFILES);
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatusInfo | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -72,6 +85,7 @@ export default function HomePage() {
 
   useEffect(() => {
     setSavedIds(getSavedGigIds());
+    setJobs(getStoredJobs());
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -215,7 +229,7 @@ export default function HomePage() {
               {/* Hero Search Bar */}
               <div className="flex max-w-2xl flex-col gap-2 rounded-xl bg-white p-2 shadow-xl sm:flex-row">
                 <div className="flex flex-1 items-center gap-3 px-3 py-2">
-                  <Search className="h-5 w-5 text-gray-400" />
+                  <Search className="h-5 w-5 shrink-0 text-gray-400" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -226,6 +240,16 @@ export default function HomePage() {
                     placeholder='Try "Spring Boot DDD", "Next.js 15", "Kubernetes Helm", or "AI Agent"...'
                     className="w-full bg-transparent text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none"
                   />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      aria-label="Clear search"
+                      onClick={() => setSearchQuery("")}
+                      className="rounded-full p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -240,60 +264,69 @@ export default function HomePage() {
               {/* Popular Tags */}
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-semibold text-emerald-200/80">Popular:</span>
-                {popularTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setSearchQuery(tag)}
-                    className="rounded-full border border-white/25 bg-white/10 px-3 py-1 font-medium text-white transition hover:border-[#1dbf73] hover:bg-[#1dbf73]"
-                  >
-                    {tag}
-                  </button>
-                ))}
+                {popularTags.map((tag) => {
+                  const isTagActive = searchQuery.toLowerCase() === tag.toLowerCase();
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setSearchQuery(isTagActive ? "" : tag)}
+                      className={`rounded-full border px-3 py-1 font-medium transition ${
+                        isTagActive
+                          ? "border-[#1dbf73] bg-[#1dbf73] text-white"
+                          : "border-white/25 bg-white/10 text-white hover:border-[#1dbf73] hover:bg-[#1dbf73]"
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             {/* Hero Feature Card */}
             <div className="lg:col-span-5">
-              <div className="rounded-2xl border border-emerald-400/20 bg-white/10 p-6 backdrop-blur-md">
-                <div className="mb-4 flex items-center justify-between border-b border-white/15 pb-4">
+              <div className="rounded-2xl border border-emerald-400/20 bg-white/10 p-6 shadow-2xl backdrop-blur-md">
+                <div className="mb-4 flex items-center justify-between gap-2 border-b border-white/15 pb-4">
                   <div>
                     <span className="text-xs font-bold uppercase tracking-wider text-[#1dbf73]">
-                      Live Architecture Status
+                      Live Platform Status
                     </span>
                     <h3 className="text-lg font-bold text-white">Escrow &amp; Event Mesh Ready</h3>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-300">
+                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-300">
                     <span className="h-2 w-2 rounded-full bg-[#1dbf73]" />
                     {gatewayStatus?.status === "UP" ? `Healthy (${routeCount} Routes)` : "Healthy"}
                   </span>
                 </div>
                 <div className="space-y-3 text-xs text-emerald-50">
-                  <div className="flex items-center justify-between rounded-lg bg-black/25 px-3.5 py-2.5">
-                    <span>Spring Cloud Gateway (:8080)</span>
-                    <span className="font-mono font-bold text-[#1dbf73]">JWT + RateLimiter</span>
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-black/25 px-3.5 py-2.5">
+                    <span>API Gateway &amp; Auth</span>
+                    <span className="font-semibold text-[#1dbf73]">JWT + Rate Limiter</span>
                   </div>
-                  <div className="flex items-center justify-between rounded-lg bg-black/25 px-3.5 py-2.5">
-                    <span>Order &amp; Payment Escrow Saga</span>
-                    <span className="font-mono font-bold text-[#1dbf73]">Kafka KRaft Event Bus</span>
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-black/25 px-3.5 py-2.5">
+                    <span>Order &amp; Payment Escrow</span>
+                    <span className="font-semibold text-[#1dbf73]">Milestone Protected</span>
                   </div>
-                  <div className="flex items-center justify-between rounded-lg bg-black/25 px-3.5 py-2.5">
-                    <span>Domain Repository Isolation</span>
-                    <span className="font-mono font-bold text-[#1dbf73]">domain/repository/*</span>
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-black/25 px-3.5 py-2.5">
+                    <span>Verified Talent Network</span>
+                    <span className="font-semibold tabular-nums text-[#1dbf73]">
+                      {sellers.length} Specialists
+                    </span>
                   </div>
                 </div>
                 <div className="mt-5 flex gap-3">
                   <Link
-                    href="/orders"
+                    href="/about"
                     className="flex-1 rounded-lg bg-[#1dbf73] py-2.5 text-center text-xs font-bold text-white transition hover:bg-[#19a463]"
                   >
-                    View Escrow Orders
+                    About FIVERREX
                   </Link>
                   <Link
-                    href="/sellers"
+                    href="/register"
                     className="flex-1 rounded-lg border border-white/30 bg-white/5 py-2.5 text-center text-xs font-bold text-white transition hover:bg-white/15"
                   >
-                    Browse Freelancers
+                    Join Free
                   </Link>
                 </div>
               </div>
@@ -304,7 +337,7 @@ export default function HomePage() {
 
       {/* Category Ribbon */}
       <div className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-4 py-3 sm:px-6 lg:px-8">
+        <div className="no-scrollbar mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-4 py-3 sm:px-6 lg:px-8">
           {CATEGORIES.map((category) => {
             const active = selectedCategory === category;
             return (
@@ -453,13 +486,125 @@ export default function HomePage() {
         )}
       </section>
 
+      {/* Open Jobs & Project Bidding Spotlight */}
+      <section className="border-t border-gray-200 bg-white py-14">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#0a4226]">
+                <Briefcase className="h-3.5 w-3.5 text-[#1dbf73]" />
+                <span>Live Project Tendering &amp; Bidding</span>
+              </span>
+              <h2 className="mt-2 text-2xl font-extrabold text-gray-900 sm:text-3xl">
+                High-Budget Open Projects Ready for Bids
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                New accounts receive <strong>{NEW_ACCOUNT_CREDITS} free credits</strong> — invite
+                friends to earn <strong>+{REFERRAL_REWARD_CREDITS} credits</strong> per signup.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2.5">
+              <Link
+                href="/quests"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-[#0a4226] transition hover:bg-emerald-100"
+              >
+                <Sparkles className="h-4 w-4 text-[#1dbf73]" />
+                <span>Telegram Quest (+500 Credits)</span>
+              </Link>
+              <Link
+                href="/credits"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+              >
+                <Gift className="h-4 w-4 text-amber-600" />
+                <span>Earn +{REFERRAL_REWARD_CREDITS} Credits</span>
+              </Link>
+              <Link
+                href="/jobs"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#1dbf73] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-[#19a463]"
+              >
+                <span>Browse All {jobs.length} Open Jobs</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            {jobs.slice(0, 4).map((job) => (
+              <div
+                key={job.id}
+                className="flex flex-col justify-between rounded-2xl border border-gray-200 bg-gray-50/50 p-6 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-white hover:shadow-md"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-[#0a4226]">
+                        {job.badge}
+                      </span>
+                      <span className="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-gray-600 ring-1 ring-gray-200">
+                        {job.category}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-gray-400">{job.postedAt}</span>
+                  </div>
+
+                  <Link
+                    href={`/jobs/${job.id}`}
+                    className="mt-3 block text-base font-extrabold leading-snug text-gray-900 hover:text-[#1dbf73]"
+                  >
+                    {job.title}
+                  </Link>
+
+                  <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-600">
+                    {job.description}
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {job.skills.slice(0, 4).map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-700 ring-1 ring-gray-200"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200/80 pt-4 text-xs">
+                  <div className="flex flex-wrap items-center gap-3 tabular-nums">
+                    <span className="font-extrabold text-gray-900">
+                      ${job.budgetMin.toLocaleString()}–${job.budgetMax.toLocaleString()}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-gray-500">
+                      <Clock className="h-3.5 w-3.5 text-[#1dbf73]" />
+                      {job.deliveryDays}d
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-bold text-amber-700">
+                      <Coins className="h-3.5 w-3.5 text-amber-500" />
+                      {job.bidCostCredits} Credits
+                    </span>
+                  </div>
+                  <Link
+                    href={`/jobs/${job.id}`}
+                    className="inline-flex items-center gap-1 font-bold text-[#1dbf73] hover:underline"
+                  >
+                    <span>Bid Now ({job.bids.length})</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Top Rated Freelancers & Architects Spotlight */}
       <section className="border-t border-gray-200 bg-gray-50/70 py-14">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#0a4226]">
-                Verified Talent (`fiverr-user-service`)
+                Verified Talent Network
               </span>
               <h2 className="mt-2 text-2xl font-extrabold text-gray-900 sm:text-3xl">
                 Top Rated Freelancers &amp; Architects
@@ -488,27 +633,30 @@ export default function HomePage() {
                   <div className="flex items-start justify-between gap-3">
                     <Link
                       href={`/sellers/${seller.username}`}
-                      className="flex items-center gap-3"
+                      className="flex min-w-0 items-center gap-3"
                     >
-                      <img
-                        src={seller.avatarUrl}
-                        alt={seller.displayName}
-                        className="h-12 w-12 rounded-full object-cover ring-2 ring-[#1dbf73]/30"
-                      />
-                      <div>
-                        <h3 className="text-sm font-extrabold text-gray-900 hover:text-[#1dbf73]">
+                      <div className="relative shrink-0">
+                        <img
+                          src={seller.avatarUrl}
+                          alt={seller.displayName}
+                          className="h-12 w-12 rounded-full object-cover ring-2 ring-[#1dbf73]/30"
+                        />
+                        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-[#1dbf73]" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-extrabold text-gray-900 hover:text-[#1dbf73]">
                           {seller.displayName}
                         </h3>
-                        <p className="text-xs text-gray-500">@{seller.username}</p>
+                        <p className="truncate text-xs text-gray-500">@{seller.username}</p>
                       </div>
                     </Link>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-[#0a4226]">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-[#0a4226]">
                       <Award className="h-3 w-3 text-[#1dbf73]" />
                       {seller.sellerLevel}
                     </span>
                   </div>
 
-                  <p className="mt-3 line-clamp-2 text-xs font-semibold text-gray-800">
+                  <p className="mt-3 line-clamp-2 min-h-[2.25rem] text-xs font-semibold text-gray-800">
                     {seller.headline}
                   </p>
 
@@ -524,7 +672,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-xs">
+                <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-xs tabular-nums">
                   <div className="flex items-center gap-3">
                     <span className="inline-flex items-center gap-1 font-bold text-gray-900">
                       <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
@@ -553,18 +701,18 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 text-center">
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#1dbf73]">
-              Trust &amp; Architecture
+              Trust &amp; Security
             </span>
             <h2 className="mt-2 text-2xl font-extrabold text-gray-900 sm:text-3xl">
               How FIVERREX Escrow Protection Works
             </h2>
             <p className="mx-auto mt-2 max-w-2xl text-sm text-gray-600">
-              Every order is orchestrated across our Order, Payment, and Notification microservices
-              so funds are only released when you approve the work.
+              Every order is protected from kickoff to delivery so funds are only released when you
+              approve the completed work.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-6">
               <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-[#1dbf73]">
                 <Layers className="h-5 w-5" />
@@ -582,8 +730,8 @@ export default function HomePage() {
               </div>
               <h3 className="text-base font-bold text-gray-900">2. Funds Held in Escrow</h3>
               <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                `fiverr-payment-service` locks your deposit in an isolated PostgreSQL escrow ledger
-                until delivery completion.
+                Your deposit is safely locked in an isolated escrow ledger until all agreed
+                deliverables are complete.
               </p>
             </div>
 
@@ -593,8 +741,8 @@ export default function HomePage() {
               </div>
               <h3 className="text-base font-bold text-gray-900">3. Collaborate &amp; Review</h3>
               <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                Exchange files in real-time via `fiverr-messaging-service` and request revisions if
-                needed with one click.
+                Exchange files in real-time inside the Inbox and request revisions if needed with
+                one click.
               </p>
             </div>
 
@@ -604,8 +752,8 @@ export default function HomePage() {
               </div>
               <h3 className="text-base font-bold text-gray-900">4. Approve &amp; Release</h3>
               <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                Once satisfied, approve the delivery to trigger the Kafka `OrderCompletedEvent` and
-                credit the seller&apos;s wallet.
+                Once satisfied, approve the delivery to settle the escrow payout directly into the
+                seller&apos;s wallet.
               </p>
             </div>
           </div>
@@ -634,8 +782,9 @@ export default function HomePage() {
                 >
                   <button
                     type="button"
+                    aria-expanded={isOpen}
                     onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
-                    className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-bold text-gray-900 hover:bg-gray-50"
+                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-sm font-bold text-gray-900 transition hover:bg-gray-50"
                   >
                     <span>{item.q}</span>
                     <ChevronDown

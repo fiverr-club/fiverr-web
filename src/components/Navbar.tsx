@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -8,12 +8,18 @@ import {
   BookOpen,
   Briefcase,
   Check,
+  Coins,
+  FolderKanban,
   Heart,
+  Info,
   KeyRound,
   LayoutDashboard,
+  LogOut,
+  Menu,
   MessageSquare,
   ShieldCheck,
   Sparkles,
+  Trophy,
   UserCheck,
   UserPlus,
   Users,
@@ -24,25 +30,38 @@ import {
   type AuthSession,
   type NotificationItem,
   buildSessionForAccount,
+  clearAuthSession,
   DEFAULT_AUTH_ACCOUNTS,
   fiverrApi,
   getAuthSession,
+  getDefaultAuthSession,
+  getRegisteredAccounts,
   getSavedGigIds,
+  isLoggedIn,
   SEED_NOTIFICATIONS,
   setAuthSession,
 } from "@/lib/api";
+import {
+  getUserCreditAccount,
+  initializeNewUserCredits,
+  NEW_ACCOUNT_CREDITS,
+} from "@/lib/jobs";
 
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const notifContainerRef = useRef<HTMLDivElement>(null);
 
-  const [session, setSession] = useState<AuthSession>(getAuthSession);
+  const [session, setSession] = useState<AuthSession>(getDefaultAuthSession);
+  const [loggedIn, setLoggedIn] = useState<boolean>(false);
+  const [credits, setCredits] = useState<number>(NEW_ACCOUNT_CREDITS);
   const [walletBalance, setWalletBalance] = useState<number>(1476.0);
   const [notifications, setNotifications] =
     useState<NotificationItem[]>(SEED_NOTIFICATIONS);
   const [accounts, setAccounts] = useState<AuthAccountDto[]>(DEFAULT_AUTH_ACCOUNTS);
   const [savedCount, setSavedCount] = useState<number>(2);
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [notifOpen, setNotifOpen] = useState<boolean>(false);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authTab, setAuthTab] = useState<"SWITCH" | "LOGIN" | "REGISTER">("SWITCH");
@@ -57,7 +76,10 @@ export function Navbar() {
   const [authFeedback, setAuthFeedback] = useState<string | null>(null);
 
   useEffect(() => {
-    setSession(getAuthSession());
+    const initialSession = getAuthSession();
+    setSession(initialSession);
+    setLoggedIn(isLoggedIn());
+    setCredits(getUserCreditAccount(initialSession.account.username).credits);
 
     async function loadNavbarData() {
       const currentSession = getAuthSession();
@@ -87,26 +109,71 @@ export function Navbar() {
         setNotifications(notifs);
       }
 
-      if (fetchedAccounts && fetchedAccounts.length > 0) {
-        setAccounts(fetchedAccounts);
+      const localRegistered = getRegisteredAccounts();
+      const remoteOrDefault =
+        fetchedAccounts && fetchedAccounts.length > 0 ? fetchedAccounts : DEFAULT_AUTH_ACCOUNTS;
+      const merged = [...localRegistered];
+      for (const acc of remoteOrDefault) {
+        if (!merged.some((m) => m.username.toLowerCase() === acc.username.toLowerCase())) {
+          merged.push(acc);
+        }
       }
+      setAccounts(merged);
     }
 
     loadNavbarData();
 
     const handleSessionChange = () => {
-      setSession(getAuthSession());
+      const next = getAuthSession();
+      setSession(next);
+      setLoggedIn(isLoggedIn());
+      setCredits(getUserCreditAccount(next.account.username).credits);
       loadNavbarData();
+    };
+    const handleCreditsChange = () => {
+      const current = getAuthSession();
+      setCredits(getUserCreditAccount(current.account.username).credits);
     };
     const handleFavChange = () => {
       setSavedCount(getSavedGigIds().length);
     };
     setSavedCount(getSavedGigIds().length);
     window.addEventListener("fiverrex-session-change", handleSessionChange);
+    window.addEventListener("fiverrex-credits-change", handleCreditsChange);
     window.addEventListener("fiverrex-favorites-change", handleFavChange);
     return () => {
       window.removeEventListener("fiverrex-session-change", handleSessionChange);
+      window.removeEventListener("fiverrex-credits-change", handleCreditsChange);
       window.removeEventListener("fiverrex-favorites-change", handleFavChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setNotifOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setNotifOpen(false);
+        setAuthModalOpen(false);
+        setMobileMenuOpen(false);
+      }
+    }
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        notifContainerRef.current &&
+        !notifContainerRef.current.contains(e.target as Node)
+      ) {
+        setNotifOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
@@ -149,7 +216,7 @@ export function Navbar() {
       password: loginPassword,
     });
     setSession(nextSession);
-    setAuthFeedback(`Authenticated via POST /api/v1/auth/login as @${nextSession.account.username}`);
+    setAuthFeedback(`Signed in as @${nextSession.account.username}`);
     setTimeout(() => {
       setAuthFeedback(null);
       setAuthModalOpen(false);
@@ -165,9 +232,13 @@ export function Navbar() {
       password: regPassword,
       roles: ["BUYER", "SELLER"],
     });
+    initializeNewUserCredits(nextSession.account.username);
     setSession(nextSession);
+    setLoggedIn(true);
     setAccounts((prev) => [nextSession.account, ...prev]);
-    setAuthFeedback(`Registered @${nextSession.account.username} via POST /api/v1/auth/register!`);
+    setAuthFeedback(
+      `Account @${nextSession.account.username} created with ${NEW_ACCOUNT_CREDITS} Credits!`
+    );
     setRegUsername("");
     setRegEmail("");
     setTimeout(() => {
@@ -176,19 +247,43 @@ export function Navbar() {
     }, 900);
   }
 
+  function handleSignOut() {
+    clearAuthSession();
+    setLoggedIn(false);
+    setAuthModalOpen(false);
+    setMobileMenuOpen(false);
+  }
+
   const navItems = [
     { href: "/", label: "Explore", icon: Sparkles },
+    { href: "/jobs", label: "Jobs", icon: FolderKanban },
+    { href: "/quests", label: "Quests", icon: Trophy, badge: "+500" },
     { href: "/sellers", label: "Freelancers", icon: Users },
-    { href: "/orders", label: "Orders & Escrow", icon: Briefcase, badge: "3" },
+    { href: "/orders", label: "Orders", icon: Briefcase, badge: "3" },
     { href: "/inbox", label: "Inbox", icon: MessageSquare, badge: "1" },
-    { href: "/seller/dashboard", label: "Seller Studio", icon: LayoutDashboard },
+    { href: "/seller/dashboard", label: "Studio", icon: LayoutDashboard },
+    { href: "/about", label: "About", icon: Info },
   ];
 
+  const techDocsUrl =
+    process.env.NEXT_PUBLIC_TECH_DOCS_URL ||
+    "https://fiverr-technical-doc.vercel.app";
+
   return (
-    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-        {/* Brand Logo */}
-        <div className="flex shrink-0 items-center gap-4">
+    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+        {/* Brand Logo + Mobile Menu Toggle */}
+        <div className="flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-700 transition hover:border-[#1dbf73] hover:text-[#1dbf73] lg:hidden"
+          >
+            {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </button>
+
           <Link
             href="/"
             className="flex shrink-0 items-center whitespace-nowrap text-2xl font-extrabold tracking-tight text-gray-900"
@@ -197,14 +292,14 @@ export function Navbar() {
             <span className="text-[#1dbf73]">.</span>
           </Link>
 
-          <div className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-1 text-xs font-medium text-emerald-900 xl:flex">
+          <div className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-1 text-xs font-medium text-emerald-900 2xl:flex">
             <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[#1dbf73]" />
             <span className="whitespace-nowrap">100% Escrow Protected</span>
           </div>
         </div>
 
-        {/* Navigation Links */}
-        <nav className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+        {/* Desktop Navigation Links */}
+        <nav className="hidden shrink-0 items-center gap-0.5 lg:flex">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -213,16 +308,17 @@ export function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                title={item.label}
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors ${
                   isActive
                     ? "bg-emerald-50 text-[#1dbf73]"
                     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="hidden whitespace-nowrap md:inline">{item.label}</span>
+                <span className="whitespace-nowrap">{item.label}</span>
                 {item.badge && (
-                  <span className="ml-0.5 inline-flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-[#1dbf73] px-1 text-[10px] font-bold text-white">
+                  <span className="ml-0.5 inline-flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full bg-[#1dbf73] px-1 text-[10px] font-bold tabular-nums text-white">
                     {item.badge}
                   </span>
                 )}
@@ -230,32 +326,42 @@ export function Navbar() {
             );
           })}
           <a
-            href={
-              process.env.NEXT_PUBLIC_TECH_DOCS_URL ||
-              "https://fiverr-technical-doc.vercel.app"
-            }
+            href={techDocsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            className="relative hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 2xl:flex"
           >
             <BookOpen className="h-4 w-4 shrink-0 text-[#1dbf73]" />
-            <span className="hidden whitespace-nowrap lg:inline">Tech Docs</span>
+            <span className="whitespace-nowrap">Tech Docs</span>
           </a>
         </nav>
 
-        {/* Right Actions: Switch to Selling + Notification Bell + Account Switcher Pill */}
-        <div className="flex shrink-0 items-center gap-2.5">
-          <button
-            type="button"
-            onClick={handleSwitchToSelling}
-            disabled={upgradingSeller}
-            className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[#1dbf73] px-3 py-1.5 text-xs font-bold text-[#1dbf73] transition hover:bg-[#1dbf73] hover:text-white disabled:opacity-50 sm:inline-flex"
-          >
-            <UserCheck className="h-3.5 w-3.5 shrink-0" />
-            <span className="whitespace-nowrap">
-              {upgradingSeller ? "Upgrading..." : "Switch to Selling"}
-            </span>
-          </button>
+        {/* Right Actions */}
+        <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+          {loggedIn && (
+            <Link
+              href="/credits"
+              title="Bidding Credits & Referral Rewards (+500 per invite)"
+              className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-extrabold tabular-nums text-amber-900 transition hover:border-amber-300 hover:bg-amber-100 sm:inline-flex"
+            >
+              <Coins className="h-3.5 w-3.5 text-amber-500" />
+              <span>{credits} Credits</span>
+            </Link>
+          )}
+
+          {loggedIn && (
+            <button
+              type="button"
+              onClick={handleSwitchToSelling}
+              disabled={upgradingSeller}
+              className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#1dbf73] px-3 py-1.5 text-xs font-bold text-[#1dbf73] transition hover:bg-[#1dbf73] hover:text-white disabled:opacity-50 2xl:inline-flex"
+            >
+              <UserCheck className="h-3.5 w-3.5 shrink-0" />
+              <span className="whitespace-nowrap">
+                {upgradingSeller ? "Upgrading..." : "Switch to Selling"}
+              </span>
+            </button>
+          )}
 
           {/* Saved / Wishlist Link */}
           <Link
@@ -274,117 +380,249 @@ export function Navbar() {
               }`}
             />
             {savedCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold tabular-nums text-white">
                 {savedCount}
               </span>
             )}
           </Link>
 
-          {/* Notification Bell Popover */}
-          <div className="relative shrink-0">
+          {/* Notification Bell Popover (when signed in) */}
+          {loggedIn && (
+            <div ref={notifContainerRef} className="relative shrink-0">
+              <button
+                type="button"
+                aria-label="Notifications"
+                aria-expanded={notifOpen}
+                onClick={() => setNotifOpen((prev) => !prev)}
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 transition hover:border-[#1dbf73] hover:text-[#1dbf73]"
+              >
+                <Bell className="h-4 w-4 shrink-0" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1dbf73] px-1 text-[10px] font-bold tabular-nums text-white">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-[calc(100vw-2rem)] max-w-xs overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl sm:w-80">
+                  <div className="flex items-center justify-between border-b border-gray-100 bg-[#0a4226] px-4 py-3 text-white">
+                    <div>
+                      <p className="text-xs font-bold">Notifications</p>
+                      <p className="text-[10px] text-emerald-200">
+                        {unreadCount} unread updates
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Close notifications"
+                      onClick={() => setNotifOpen(false)}
+                      className="rounded p-1 text-white/80 hover:bg-white/10"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto">
+                    {notifications.map((n) => (
+                      <button
+                        key={n.id}
+                        type="button"
+                        onClick={() => handleMarkRead(n.id)}
+                        className={`w-full p-3.5 text-left transition hover:bg-gray-50 ${
+                          n.read ? "opacity-70" : "bg-emerald-50/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-900">
+                            {n.type.replace(/_/g, " ")}
+                          </span>
+                          {!n.read ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1dbf73]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#1dbf73]" />
+                              Mark read
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400">
+                              <Check className="h-3 w-3" /> Read
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs font-bold text-gray-900">{n.title}</p>
+                        <p className="mt-0.5 line-clamp-2 text-[11px] text-gray-600">
+                          {n.message}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {loggedIn ? (
+            /* User Profile & Auth Switcher Pill */
             <button
               type="button"
-              aria-label="Notifications"
-              onClick={() => setNotifOpen((prev) => !prev)}
-              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 transition hover:border-[#1dbf73] hover:text-[#1dbf73]"
+              onClick={() => {
+                setAuthFeedback(null);
+                setAuthModalOpen(true);
+              }}
+              className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 p-1 text-left transition hover:border-[#1dbf73] sm:pr-3"
             >
-              <Bell className="h-4 w-4 shrink-0" />
-              {unreadCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1dbf73] px-1 text-[10px] font-bold text-white">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-
-            {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl z-50">
-                <div className="flex items-center justify-between border-b border-gray-100 bg-[#0a4226] px-4 py-3 text-white">
-                  <div>
-                    <p className="text-xs font-bold">Notifications</p>
-                    <p className="text-[10px] text-emerald-200">
-                      fiverr-notification-service ({unreadCount} unread)
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setNotifOpen(false)}
-                    className="rounded p-1 text-white/80 hover:bg-white/10"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto">
-                  {notifications.map((n) => (
-                    <button
-                      key={n.id}
-                      type="button"
-                      onClick={() => handleMarkRead(n.id)}
-                      className={`w-full p-3.5 text-left transition hover:bg-gray-50 ${
-                        n.read ? "opacity-70" : "bg-emerald-50/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-900">
-                          {n.type.replace(/_/g, " ")}
-                        </span>
-                        {!n.read ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1dbf73]">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#1dbf73]" />
-                            Mark read
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400">
-                            <Check className="h-3 w-3" /> Read
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs font-bold text-gray-900">{n.title}</p>
-                      <p className="mt-0.5 line-clamp-2 text-[11px] text-gray-600">
-                        {n.message}
-                      </p>
-                    </button>
-                  ))}
-                </div>
+              <img
+                src={session.avatarUrl}
+                alt={session.displayName}
+                className="h-7 w-7 shrink-0 rounded-full object-cover"
+              />
+              <div className="hidden text-left text-xs leading-tight sm:block">
+                <p className="whitespace-nowrap font-bold text-gray-900">
+                  {session.displayName}
+                </p>
+                <p className="whitespace-nowrap text-[10px] font-semibold tabular-nums text-[#1dbf73]">
+                  ${walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })} Balance
+                </p>
               </div>
-            )}
-          </div>
-
-          {/* User Profile & Auth Switcher Pill */}
-          <button
-            type="button"
-            onClick={() => {
-              setAuthFeedback(null);
-              setAuthModalOpen(true);
-            }}
-            className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 py-1 pl-1 pr-3 text-left transition hover:border-[#1dbf73]"
-          >
-            <img
-              src={session.avatarUrl}
-              alt={session.displayName}
-              className="h-7 w-7 shrink-0 rounded-full object-cover"
-            />
-            <div className="hidden text-left text-xs leading-tight sm:block">
-              <p className="whitespace-nowrap font-bold text-gray-900">
-                {session.displayName}
-              </p>
-              <p className="whitespace-nowrap text-[10px] font-semibold text-[#1dbf73]">
-                ${walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })} Balance
-              </p>
+            </button>
+          ) : (
+            /* Sign In + Join Free Buttons */
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <Link
+                href="/login"
+                className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  pathname === "/login"
+                    ? "bg-emerald-50 text-[#1dbf73]"
+                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                }`}
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/register"
+                className="whitespace-nowrap rounded-lg bg-[#1dbf73] px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#19a463]"
+              >
+                Join
+              </Link>
             </div>
-          </button>
+          )}
         </div>
       </div>
 
+      {/* Mobile Navigation Drawer */}
+      {mobileMenuOpen && (
+        <div className="border-t border-gray-200 bg-white px-4 py-3 lg:hidden">
+          <nav className="flex flex-col gap-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                item.href === "/" ? pathname === "/" : pathname?.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                    isActive
+                      ? "bg-emerald-50 text-[#1dbf73]"
+                      : "text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </span>
+                  {item.badge && (
+                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#1dbf73] px-1.5 text-[11px] font-bold tabular-nums text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+
+            <a
+              href={techDocsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <BookOpen className="h-4 w-4 shrink-0 text-[#1dbf73]" />
+              <span>Tech Docs</span>
+            </a>
+
+            <div className="mt-2 space-y-2 border-t border-gray-100 pt-3">
+              {loggedIn ? (
+                <>
+                  <Link
+                    href="/credits"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex w-full items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-900"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-amber-500" />
+                      <span>My Bidding Credits</span>
+                    </span>
+                    <span className="tabular-nums">{credits} Credits (+500/invite)</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleSwitchToSelling();
+                    }}
+                    disabled={upgradingSeller}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#1dbf73] bg-emerald-50/50 py-2.5 text-xs font-bold text-[#0a4226] transition hover:bg-[#1dbf73] hover:text-white disabled:opacity-50"
+                  >
+                    <UserCheck className="h-4 w-4 shrink-0" />
+                    <span>{upgradingSeller ? "Upgrading..." : "Switch to Selling"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    <LogOut className="h-4 w-4 shrink-0 text-rose-500" />
+                    <span>Sign Out (@{session.account.username})</span>
+                  </button>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <Link
+                    href="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="rounded-xl border border-gray-300 py-2.5 text-center text-xs font-bold text-gray-800 hover:bg-gray-50"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/register"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="rounded-xl bg-[#1dbf73] py-2.5 text-center text-xs font-bold text-white hover:bg-[#19a463]"
+                  >
+                    Join Free
+                  </Link>
+                </div>
+              )}
+            </div>
+          </nav>
+        </div>
+      )}
+
       {/* Account & JWT Auth Modal */}
       {authModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div
+          onClick={() => setAuthModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
               <div className="flex items-center gap-2">
                 <KeyRound className="h-4 w-4 text-[#1dbf73]" />
                 <div>
                   <h3 className="text-sm font-bold">
-                    FIVERREX Identity &amp; Auth (`fiverr-auth-service`)
+                    FIVERREX Account &amp; Session
                   </h3>
                   <p className="text-[11px] text-emerald-200">
                     Active: @{session.account.username}
@@ -393,6 +631,7 @@ export function Navbar() {
               </div>
               <button
                 type="button"
+                aria-label="Close account modal"
                 onClick={() => setAuthModalOpen(false)}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10"
               >
@@ -405,7 +644,7 @@ export function Navbar() {
               <button
                 type="button"
                 onClick={() => setAuthTab("SWITCH")}
-                className={`flex items-center justify-center gap-1.5 py-3 border-b-2 transition ${
+                className={`flex items-center justify-center gap-1.5 border-b-2 py-3 transition ${
                   authTab === "SWITCH"
                     ? "border-[#1dbf73] bg-white text-[#1dbf73]"
                     : "border-transparent text-gray-500 hover:text-gray-800"
@@ -417,7 +656,7 @@ export function Navbar() {
               <button
                 type="button"
                 onClick={() => setAuthTab("LOGIN")}
-                className={`flex items-center justify-center gap-1.5 py-3 border-b-2 transition ${
+                className={`flex items-center justify-center gap-1.5 border-b-2 py-3 transition ${
                   authTab === "LOGIN"
                     ? "border-[#1dbf73] bg-white text-[#1dbf73]"
                     : "border-transparent text-gray-500 hover:text-gray-800"
@@ -429,7 +668,7 @@ export function Navbar() {
               <button
                 type="button"
                 onClick={() => setAuthTab("REGISTER")}
-                className={`flex items-center justify-center gap-1.5 py-3 border-b-2 transition ${
+                className={`flex items-center justify-center gap-1.5 border-b-2 py-3 transition ${
                   authTab === "REGISTER"
                     ? "border-[#1dbf73] bg-white text-[#1dbf73]"
                     : "border-transparent text-gray-500 hover:text-gray-800"
@@ -450,7 +689,7 @@ export function Navbar() {
               {authTab === "SWITCH" && (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500">
-                    Select a live PostgreSQL account from `GET /api/v1/auth/accounts`:
+                    Select an active workspace account to switch roles:
                   </p>
                   {accounts.map((acc) => {
                     const isCurrent = acc.id === session.account.id;
@@ -515,7 +754,7 @@ export function Navbar() {
                     type="submit"
                     className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463]"
                   >
-                    Sign In via `POST /api/v1/auth/login`
+                    Sign In to Workspace
                   </button>
                 </form>
               )}
@@ -562,9 +801,29 @@ export function Navbar() {
                     type="submit"
                     className="w-full rounded-xl bg-[#1dbf73] py-3 text-xs font-bold text-white transition hover:bg-[#19a463]"
                   >
-                    Create Account (`POST /api/v1/auth/register`)
+                    Create FIVERREX Account
                   </button>
                 </form>
+              )}
+
+              {loggedIn && (
+                <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-4">
+                  <Link
+                    href="/about"
+                    onClick={() => setAuthModalOpen(false)}
+                    className="text-xs font-semibold text-gray-500 hover:text-[#1dbf73]"
+                  >
+                    About FIVERREX
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>

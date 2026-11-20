@@ -48,6 +48,16 @@ export default function InboxPage() {
     loadInbox();
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOfferModalOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const activeConv =
     conversations.find((c) => c.id === activeConvId) || conversations[0];
 
@@ -183,7 +193,7 @@ export default function InboxPage() {
         <div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-[#1dbf73]">
             <Sparkles className="h-3.5 w-3.5" />
-            Real-Time Messaging (`fiverr-messaging-service`)
+            Real-Time Messaging &amp; Custom Offers
           </span>
           <h1 className="mt-1.5 text-2xl font-extrabold text-gray-900">
             Buyer &amp; Seller Inbox
@@ -216,16 +226,16 @@ export default function InboxPage() {
         </div>
       )}
 
-      <div className="grid min-h-[600px] grid-cols-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:grid-cols-12">
+      <div className="grid min-h-[600px] grid-cols-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:h-[640px] lg:grid-cols-12">
         {/* Left Conversation Sidebar */}
-        <div className="border-b border-gray-200 bg-gray-50/50 lg:col-span-4 lg:border-b-0 lg:border-r">
+        <div className="border-b border-gray-200 bg-gray-50/50 lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:border-b-0 lg:border-r">
           <div className="border-b border-gray-200 p-4">
             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
               All Conversations ({conversations.length})
             </h2>
           </div>
 
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 lg:flex-1 lg:overflow-y-auto">
             {conversations.map((conv) => {
               const isSelected = conv.id === activeConv.id;
               return (
@@ -271,7 +281,7 @@ export default function InboxPage() {
         </div>
 
         {/* Right Chat Thread */}
-        <div className="flex flex-col justify-between lg:col-span-8">
+        <div className="flex min-h-0 flex-col justify-between lg:col-span-8">
           {/* Thread Header */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-6 py-4">
             <div className="flex items-center gap-3">
@@ -408,12 +418,19 @@ export default function InboxPage() {
 
       {/* Send Custom Offer Modal */}
       {offerModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div
+          onClick={() => setOfferModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-gray-200 bg-[#0a4226] px-6 py-4 text-white">
               <h3 className="text-sm font-bold">Create Custom Escrow Offer</h3>
               <button
                 type="button"
+                aria-label="Close custom offer modal"
                 onClick={() => setOfferModalOpen(false)}
                 className="rounded-lg p-1 text-white/80 hover:bg-white/10"
               >

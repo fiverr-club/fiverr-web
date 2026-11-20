@@ -119,7 +119,7 @@ export default function SellersDirectoryPage() {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-950/60 px-3 py-1 text-xs font-semibold text-emerald-300">
               <Sparkles className="h-3.5 w-3.5 text-[#1dbf73]" />
-              <span>Verified Talent Directory • `GET /api/v1/sellers`</span>
+              <span>Verified Talent Directory</span>
             </div>
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
               Hire Verified Freelancers &amp; Principal Architects
@@ -172,24 +172,25 @@ export default function SellersDirectoryPage() {
           </div>
 
           <div className="flex items-center gap-2 px-2 md:col-span-4">
-            <span className="shrink-0 text-xs font-bold text-gray-600">
+            <span className="shrink-0 text-xs font-bold tabular-nums text-gray-600">
               Max Rate: ${maxHourlyRate}/hr
             </span>
             <input
               type="range"
+              aria-label="Filter by maximum hourly rate"
               min={100}
-              max={250}
-              step={15}
+              max={300}
+              step={10}
               value={maxHourlyRate}
               onChange={(e) => setMaxHourlyRate(Number(e.target.value))}
-              className="w-full accent-[#1dbf73]"
+              className="w-full cursor-pointer accent-[#1dbf73]"
             />
           </div>
         </div>
       </div>
 
       {/* Skill Filter Pills */}
-      <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2">
+      <div className="no-scrollbar mb-6 flex items-center gap-2 overflow-x-auto pb-2">
         {allSkills.map((skill) => {
           const active = selectedSkill === skill;
           return (
@@ -242,9 +243,9 @@ export default function SellersDirectoryPage() {
                   <div className="flex items-start justify-between gap-3">
                     <Link
                       href={`/sellers/${seller.username}`}
-                      className="flex items-center gap-3.5"
+                      className="flex min-w-0 items-center gap-3.5"
                     >
-                      <div className="relative">
+                      <div className="relative shrink-0">
                         <img
                           src={seller.avatarUrl}
                           alt={seller.displayName}
@@ -255,19 +256,21 @@ export default function SellersDirectoryPage() {
                           className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#1dbf73]"
                         />
                       </div>
-                      <div>
-                        <h2 className="text-base font-extrabold text-gray-900 hover:text-[#1dbf73]">
+                      <div className="min-w-0">
+                        <h2 className="truncate text-base font-extrabold text-gray-900 hover:text-[#1dbf73]">
                           {seller.displayName}
                         </h2>
-                        <p className="text-xs font-medium text-gray-500">@{seller.username}</p>
+                        <p className="truncate text-xs font-medium text-gray-500">
+                          @{seller.username}
+                        </p>
                         <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-[#0a4226]">
-                          <Award className="h-3 w-3 text-[#1dbf73]" />
+                          <Award className="h-3 w-3 shrink-0 text-[#1dbf73]" />
                           <span>{seller.sellerLevel}</span>
                         </div>
                       </div>
                     </Link>
 
-                    <div className="text-right">
+                    <div className="shrink-0 text-right tabular-nums">
                       <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">
                         Hourly
                       </span>
