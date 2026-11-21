@@ -26,7 +26,7 @@ export async function GET() {
   });
 
   const activeBots = getAllReactionCapableBots();
-  const autoSweepCount = getReactionSweepCount(7);
+  const autoSweepCount = getReactionSweepCount(10);
 
   return NextResponse.json(
     {
@@ -38,6 +38,7 @@ export async function GET() {
       },
       reactions: {
         autoReact: true,
+        instantAllBotBlastOnMessage: true,
         isBig: true,
         autoSweepCountPerBot: autoSweepCount,
         maxHypeWavePerBot: 10,
@@ -49,6 +50,8 @@ export async function GET() {
         })),
         interactiveActionBarButtons: 8,
         telegramSingleBotPerMessageLimit: 1,
+        swarmScalingHint:
+          "Add 2-7 extra BotFather tokens via REACTION_SWARM_BOT_TOKENS (or REACTION_BOT_TOKEN_2..10) to drop 5-10 simultaneous native reactions on every single message.",
       },
     },
     { status: res.status }

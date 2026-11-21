@@ -97,7 +97,7 @@ export function getReactionBotConfig(): TelegramConfig | null {
   return readBotConfigFromEnv("REACTION");
 }
 
-export function getReactionSweepCount(fallback = 7): number {
+export function getReactionSweepCount(fallback = 10): number {
   const raw = process.env.REACTION_SWEEP_COUNT?.trim();
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
@@ -129,6 +129,12 @@ export function getAllReactionCapableBots(): ReactionBotParticipant[] {
   pushUnique("agent", "@agent_programming_bot", process.env.AGENT_BOT_TOKEN);
   pushUnique("fiverrex", "@Fiverrex_bot", process.env.TELEGRAM_BOT_TOKEN);
 
+  // Support numbered env vars REACTION_BOT_TOKEN_2 .. REACTION_BOT_TOKEN_10
+  for (let i = 2; i <= 10; i++) {
+    pushUnique("swarm", `reaction-bot-${i}`, process.env[`REACTION_BOT_TOKEN_${i}`]);
+  }
+
+  // Also support comma/newline/space-separated REACTION_SWARM_BOT_TOKENS
   const swarmRaw = process.env.REACTION_SWARM_BOT_TOKENS?.trim();
   if (swarmRaw) {
     swarmRaw
@@ -737,12 +743,6 @@ export const TELEGRAM_SAFE_REACTION_EMOJIS = [
   "🙏",
   "🤔",
   "🤣",
-  "❤️‍🔥",
-  "👌",
-  "🫡",
-  "🤗",
-  "🤓",
-  "🍾",
 ] as const;
 
 export type TelegramSafeReactionEmoji = (typeof TELEGRAM_SAFE_REACTION_EMOJIS)[number];
@@ -756,11 +756,18 @@ export interface TelegramIncomingMessage {
   photo?: unknown[];
   sticker?: { emoji?: string };
   video?: unknown;
+  video_note?: unknown;
   animation?: unknown;
   document?: unknown;
   voice?: unknown;
   audio?: unknown;
   poll?: unknown;
+  dice?: unknown;
+  location?: unknown;
+  contact?: unknown;
+  venue?: unknown;
+  story?: unknown;
+  forward_origin?: unknown;
   new_chat_members?: Array<{ id?: number; is_bot?: boolean; first_name?: string; username?: string }>;
   left_chat_member?: unknown;
   pinned_message?: unknown;
@@ -812,11 +819,18 @@ export function shouldReactToTelegramMessage(
       msg.photo ||
       msg.sticker ||
       msg.video ||
+      msg.video_note ||
       msg.animation ||
       msg.document ||
       msg.voice ||
       msg.audio ||
       msg.poll ||
+      msg.dice ||
+      msg.location ||
+      msg.contact ||
+      msg.venue ||
+      msg.story ||
+      msg.forward_origin ||
       msg.new_chat_members?.length
   );
 }
@@ -825,7 +839,7 @@ function getContextReactionPool(
   msg: Partial<TelegramIncomingMessage>
 ): readonly TelegramSafeReactionEmoji[] {
   if (msg.new_chat_members?.some((m) => !m.is_bot)) {
-    return ["🎉", "❤️", "🔥", "👏", "🤩", "🏆", "⚡", "🤗", "💯", "🍾"];
+    return ["🎉", "❤️", "🔥", "👏", "🤩", "🏆", "⚡", "🥰", "💯", "😎"];
   }
 
   const rawText = (msg.text || msg.caption || msg.sticker?.emoji || "").trim();
@@ -835,7 +849,7 @@ function getContextReactionPool(
       rawText
     )
   ) {
-    return ["❤️", "❤️‍🔥", "🥰", "🙏", "🔥", "👏", "🤩", "🤗", "👍", "💯"];
+    return ["❤️", "🥰", "🔥", "🙏", "👏", "🤩", "⚡", "👍", "💯", "🎉"];
   }
 
   if (
@@ -843,7 +857,7 @@ function getContextReactionPool(
       rawText
     )
   ) {
-    return ["🎉", "🏆", "🔥", "👏", "💯", "⚡", "🍾", "🤩", "❤️", "🫡"];
+    return ["🎉", "🏆", "🔥", "👏", "💯", "⚡", "🤩", "❤️", "👍", "😎"];
   }
 
   if (/\b(haha|hehe|hihi|lol|lmao|rofl|lmfao)\b|[😂🤣😹]/u.test(rawText)) {
@@ -855,11 +869,11 @@ function getContextReactionPool(
       rawText
     )
   ) {
-    return ["⚡", "🔥", "🤯", "💯", "❤️", "🤓", "🤩", "👍", "🏆", "👏"];
+    return ["⚡", "🔥", "🤯", "💯", "❤️", "🤩", "👍", "🏆", "👏", "😎"];
   }
 
   if (JOB_TOPIC_REGEX.test(rawText)) {
-    return ["🔥", "🤝", "🏆", "⚡", "❤️", "💯", "👏", "👍", "👀", "🫡"];
+    return ["🔥", "🤝", "🏆", "⚡", "❤️", "💯", "👏", "👍", "👀", "🤩"];
   }
 
   if (NEWS_TOPIC_REGEX.test(rawText)) {
@@ -867,15 +881,15 @@ function getContextReactionPool(
   }
 
   if (/\?|\b(how|why|what|when|which|anyone|help|làm sao|tại sao|thế nào|sao vậy|hỏi)\b/i.test(rawText)) {
-    return ["🤔", "👀", "⚡", "❤️", "🤓", "👍", "🙏", "🔥", "🤝", "👌"];
+    return ["🤔", "👀", "⚡", "❤️", "👍", "🙏", "🔥", "🤝", "👏", "💯"];
   }
 
   if (msg.sticker || msg.animation) {
     return ["❤️", "🤩", "😁", "🔥", "🤣", "👏", "⚡", "🥰", "😎", "💯"];
   }
 
-  if (msg.photo || msg.video || msg.document || msg.voice || msg.audio || msg.poll) {
-    return ["❤️", "🔥", "👀", "👏", "🤩", "⚡", "💯", "👍", "🏆", "❤️‍🔥"];
+  if (msg.photo || msg.video || msg.video_note || msg.document || msg.voice || msg.audio || msg.poll) {
+    return ["❤️", "🔥", "👀", "👏", "🤩", "⚡", "💯", "👍", "🏆", "🎉"];
   }
 
   return ["❤️", "🔥", "⚡", "🤩", "👏", "💯", "👍", "🥰", "🏆", "😎"];
@@ -974,6 +988,7 @@ export async function sweepRecentMessageReactions(
   anchorMessageId: number,
   options?: {
     count?: number;
+    startOffset?: number;
     botRole?: ReactionBotRole;
     slotOffset?: number;
     anchorMsg?: Partial<TelegramIncomingMessage>;
@@ -986,17 +1001,28 @@ export async function sweepRecentMessageReactions(
   reactedMessageIds: number[];
   rateLimited: boolean;
 }> {
-  const count = Math.max(1, Math.min(10, options?.count ?? 7));
+  const count = Math.max(0, Math.min(10, options?.count ?? 10));
+  const startOffset = Math.max(0, options?.startOffset ?? 0);
   const botRole = options?.botRole ?? "reaction";
   const slotOffset = options?.slotOffset;
   const isBig = options?.isBig ?? true;
 
   const targetIds: number[] = [];
-  for (let offset = 0; offset < count; offset++) {
-    const id = anchorMessageId - offset;
+  for (let i = 0; i < count; i++) {
+    const id = anchorMessageId - (startOffset + i);
     if (id >= 1) {
       targetIds.push(id);
     }
+  }
+
+  if (targetIds.length === 0) {
+    return {
+      reactedCount: 0,
+      attemptedCount: 0,
+      primaryEmoji: undefined,
+      reactedMessageIds: [],
+      rateLimited: false,
+    };
   }
 
   let reactedCount = 0;
@@ -1004,8 +1030,8 @@ export async function sweepRecentMessageReactions(
   let rateLimited = false;
   const reactedMessageIds: number[] = [];
 
-  // Process in small batches of 4 with a tiny pause to stay fast on Vercel while respecting Telegram limits.
-  const batchSize = 4;
+  // Process in fast batches of 5 with a tiny pause to stay snappy on Vercel while respecting rate limits.
+  const batchSize = 5;
   for (let i = 0; i < targetIds.length; i += batchSize) {
     const slice = targetIds.slice(i, i + batchSize);
     const results = await Promise.all(
@@ -1039,7 +1065,7 @@ export async function sweepRecentMessageReactions(
     }
 
     if (i + batchSize < targetIds.length) {
-      await sleepMs(60);
+      await sleepMs(40);
     }
   }
 
@@ -1622,29 +1648,35 @@ export async function handleReactionBotWebhookRequest(
     return { status: 200, body: { ok: true, mode: "callback-ack" } };
   }
 
-  // 2) Handle channel posts (auto-react + multi-bot fan-out!).
+  // 2) Handle channel posts (instant ALL-bot parallel blast + recent post sweep!).
   if (update.channel_post) {
     const post = update.channel_post;
     const chatId = post.chat?.id;
     if (chatId && shouldReactToTelegramMessage(post, { allowChannelPost: true })) {
-      const sweepCount = getReactionSweepCount(7);
-      const [sweep, swarmFanOut] = await Promise.all([
-        sweepRecentMessageReactions(config.botToken, chatId, post.message_id, {
-          count: sweepCount,
-          botRole: "reaction",
-          slotOffset: 0,
-          anchorMsg: post,
-          isBig: true,
-        }),
-        fanOutReactionsToMessage(chatId, post.message_id, post, { excludeRoles: ["reaction"] }),
-      ]);
+      const sweepCount = getReactionSweepCount(10);
+      // Phase 1: Instant parallel blast on the new channel post across ALL configured bots.
+      const instantBlast = await fanOutReactionsToMessage(chatId, post.message_id, post, {
+        isBig: true,
+      });
+      // Phase 2: Sweep previous posts so recent items stay fully reacted too.
+      const sweep =
+        sweepCount > 1
+          ? await sweepRecentMessageReactions(config.botToken, chatId, post.message_id, {
+              count: sweepCount - 1,
+              startOffset: 1,
+              botRole: "reaction",
+              slotOffset: 0,
+              isBig: true,
+            })
+          : { reactedCount: 0 };
       return {
         status: 200,
         body: {
           ok: true,
           mode: "channel-post-react",
-          reactedCount: sweep.reactedCount + swarmFanOut.reactedCount,
-          primaryEmoji: sweep.primaryEmoji ?? null,
+          instantReactedBots: instantBlast.reactedCount,
+          emojis: instantBlast.emojis,
+          reactedCount: instantBlast.reactedCount + sweep.reactedCount,
         },
       };
     }
@@ -1660,28 +1692,34 @@ export async function handleReactionBotWebhookRequest(
 
   const isEdited = Boolean(update.edited_message && !update.message);
   const isGroupChat = msg.chat?.type === "group" || msg.chat?.type === "supergroup";
-  const autoSweepCount = getReactionSweepCount(7);
+  const autoSweepCount = getReactionSweepCount(10);
 
   let reactedEmoji: string | undefined;
   let reactedCount = 0;
+  let instantBotsReacted = 0;
 
-  // 3) Auto-react on EVERY incoming human message (sweeps 5-10 recent messages in groups!).
+  // 3) INSTANT multi-bot reaction blast on EVERY incoming message, followed by recent-message sweep!
   if (shouldReactToTelegramMessage(msg)) {
-    const [sweep, swarmFanOut] = await Promise.all([
-      sweepRecentMessageReactions(config.botToken, chatId, msg.message_id, {
-        count: isGroupChat && !isEdited ? autoSweepCount : 1,
+    // Phase 1 (<150ms): Immediately fire ALL configured bots (reaction + agent + fiverrex + all swarm bots)
+    // in parallel on msg.message_id with guaranteed distinct big reactions!
+    const instantBlast = await fanOutReactionsToMessage(chatId, msg.message_id, msg, {
+      isBig: true,
+    });
+    instantBotsReacted = instantBlast.reactedCount;
+    reactedEmoji = instantBlast.emojis[0]?.emoji;
+    reactedCount = instantBlast.reactedCount;
+
+    // Phase 2: Immediately sweep preceding messages (msg_id - 1 .. msg_id - 9) so every bot/user post stays covered!
+    if (isGroupChat && !isEdited && autoSweepCount > 1) {
+      const sweep = await sweepRecentMessageReactions(config.botToken, chatId, msg.message_id, {
+        count: autoSweepCount - 1,
+        startOffset: 1,
         botRole: "reaction",
         slotOffset: 0,
-        anchorMsg: msg,
         isBig: true,
-      }),
-      // Also fire any extra swarm bots (not agent/fiverrex since they have their own webhooks in groups)
-      fanOutReactionsToMessage(chatId, msg.message_id, msg, {
-        excludeRoles: isGroupChat ? ["reaction", "agent", "fiverrex"] : ["reaction"],
-      }),
-    ]);
-    reactedEmoji = sweep.primaryEmoji;
-    reactedCount = sweep.reactedCount + swarmFanOut.reactedCount;
+      });
+      reactedCount += sweep.reactedCount;
+    }
   }
 
   if (isEdited || !text) {
@@ -1690,6 +1728,7 @@ export async function handleReactionBotWebhookRequest(
       body: {
         ok: true,
         ...(reactedEmoji ? { reacted: reactedEmoji } : {}),
+        ...(instantBotsReacted > 0 ? { instantBotsReacted } : {}),
         ...(reactedCount > 0 ? { reactedCount } : {}),
       },
     };
