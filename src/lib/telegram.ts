@@ -131,7 +131,12 @@ export function getAllReactionCapableBots(): ReactionBotParticipant[] {
 
   // Support numbered env vars REACTION_BOT_TOKEN_2 .. REACTION_BOT_TOKEN_10
   for (let i = 2; i <= 10; i++) {
-    pushUnique("swarm", `reaction-bot-${i}`, process.env[`REACTION_BOT_TOKEN_${i}`]);
+    const customLabel = process.env[`REACTION_BOT_LABEL_${i}`]?.trim();
+    pushUnique(
+      "swarm",
+      customLabel || `reaction-bot-${i}`,
+      process.env[`REACTION_BOT_TOKEN_${i}`]
+    );
   }
 
   // Also support comma/newline/space-separated REACTION_SWARM_BOT_TOKENS
@@ -147,6 +152,53 @@ export function getAllReactionCapableBots(): ReactionBotParticipant[] {
   }
 
   return bots;
+}
+
+export interface ReactionSlotBotConfig extends TelegramConfig {
+  slot: number;
+  slotOffset: number;
+  label: string;
+}
+
+export function getReactionSlotBotConfig(slot: number): ReactionSlotBotConfig | null {
+  if (!Number.isInteger(slot) || slot < 2 || slot > 10) {
+    return null;
+  }
+
+  const botToken = process.env[`REACTION_BOT_TOKEN_${slot}`]?.trim();
+  if (!botToken) {
+    return null;
+  }
+
+  const chatId = process.env.TELEGRAM_CHAT_ID?.trim() || DEFAULT_TELEGRAM_CHAT_ID;
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || DEFAULT_SITE_URL).replace(
+    /\/+$/,
+    ""
+  );
+  const webhookSecret =
+    process.env[`REACTION_WEBHOOK_SECRET_${slot}`]?.trim() ||
+    process.env.REACTION_WEBHOOK_SECRET?.trim();
+  const broadcastSecret =
+    process.env[`REACTION_BROADCAST_SECRET_${slot}`]?.trim() ||
+    process.env.REACTION_BROADCAST_SECRET?.trim();
+
+  const allBots = getAllReactionCapableBots();
+  const matched = allBots.find((b) => b.token === botToken);
+  const label =
+    process.env[`REACTION_BOT_LABEL_${slot}`]?.trim() ||
+    matched?.label ||
+    `reaction-bot-${slot}`;
+
+  return {
+    botToken,
+    chatId,
+    siteUrl,
+    webhookSecret,
+    broadcastSecret,
+    slot,
+    slotOffset: matched ? matched.slotOffset : slot + 1,
+    label,
+  };
 }
 
 export function escapeTelegramHtml(input: string): string {
@@ -1922,6 +1974,325 @@ export async function handleReactionBotWebhookRequest(
     status: 200,
     body: {
       ok: true,
+      mode: "reaction-buddy-chat",
+      model: aiReply.model,
+      reacted: reactedEmoji ?? null,
+      reactedCount,
+    },
+  };
+}
+
+export async function handleReactionSlotWebhookRequest(
+  req: Request,
+  slot: number
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const config = getReactionSlotBotConfig(slot);
+  if (!config) {
+    return {
+      status: 503,
+      body: { ok: false, error: `Reaction bot slot ${slot} is not configured` },
+    };
+  }
+
+  const secretHeader = req.headers.get("x-telegram-bot-api-secret-token");
+  if (config.webhookSecret && !verifySharedSecret(config.webhookSecret, secretHeader)) {
+    return { status: 401, body: { ok: false, error: "Unauthorized webhook" } };
+  }
+
+  let update: {
+    message?: TelegramIncomingMessage;
+    edited_message?: TelegramIncomingMessage;
+    channel_post?: TelegramIncomingMessage;
+    callback_query?: TelegramCallbackQuery;
+  };
+  try {
+    update = (await req.json()) as typeof update;
+  } catch {
+    return { status: 200, body: { ok: true, ignored: true } };
+  }
+
+  const autoSweepCount = getReactionSweepCount(10);
+
+  // 1) Interactive callback buttons
+  if (update.callback_query) {
+    const cb = update.callback_query;
+    const data = cb.data || "";
+    const cbMsg = cb.message;
+    const cbChatId = cbMsg?.chat?.id;
+
+    if (data.startsWith("rb:react:") && cbChatId && cbMsg?.message_id) {
+      const emoji = data.slice("rb:react:".length);
+      const { updated, newCount } = incrementReactionButtonInMarkup(cbMsg.reply_markup, emoji);
+      await Promise.all([
+        callTelegramApi(config.botToken, "editMessageReplyMarkup", {
+          chat_id: cbChatId,
+          message_id: cbMsg.message_id,
+          reply_markup: updated,
+        }),
+        callTelegramApi(config.botToken, "answerCallbackQuery", {
+          callback_query_id: cb.id,
+          text: `${emoji} +1! (${newCount} total)`,
+          show_alert: false,
+        }),
+        reactToTelegramMessageDetailed(
+          config.botToken,
+          cbChatId,
+          cbMsg.message_id,
+          (TELEGRAM_SAFE_REACTION_EMOJIS.includes(emoji as TelegramSafeReactionEmoji)
+            ? emoji
+            : "🔥") as TelegramSafeReactionEmoji,
+          { isBig: true }
+        ),
+      ]);
+      return { status: 200, body: { ok: true, slot, mode: "callback-react", emoji, newCount } };
+    }
+
+    if (data.startsWith("rb:hype:") && cbChatId && cbMsg?.message_id) {
+      const requested = parseRequestedReactionCount(data.slice("rb:hype:".length), 10);
+      const wave = await fanOutReactionWave(cbChatId, cbMsg.message_id, requested, cbMsg);
+      await callTelegramApi(config.botToken, "answerCallbackQuery", {
+        callback_query_id: cb.id,
+        text: `🔥 Blasted ${wave.totalReactions} big reactions across recent posts!`,
+        show_alert: false,
+      });
+      return { status: 200, body: { ok: true, slot, mode: "callback-hype", wave } };
+    }
+
+    if (data === "rb:vibe" && cbChatId) {
+      await callTelegramApi(config.botToken, "answerCallbackQuery", {
+        callback_query_id: cb.id,
+        text: "📊 Launching a fresh community vibe poll!",
+        show_alert: false,
+      });
+      const pollRes = await sendVibePollToChat(config.botToken, cbChatId);
+      return { status: 200, body: { ok: true, slot, mode: "callback-vibe", pollRes } };
+    }
+
+    await callTelegramApi(config.botToken, "answerCallbackQuery", {
+      callback_query_id: cb.id,
+      text: "⚡ Done!",
+    });
+    return { status: 200, body: { ok: true, slot, mode: "callback-ack" } };
+  }
+
+  // 2) Channel posts
+  if (update.channel_post) {
+    const post = update.channel_post;
+    const chatId = post.chat?.id;
+    if (chatId && shouldReactToTelegramMessage(post, { allowChannelPost: true })) {
+      const sweep = await sweepRecentMessageReactions(config.botToken, chatId, post.message_id, {
+        count: autoSweepCount,
+        botRole: "swarm",
+        slotOffset: config.slotOffset,
+        anchorMsg: post,
+        isBig: true,
+      });
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          slot,
+          label: config.label,
+          mode: "channel-post-react",
+          reactedCount: sweep.reactedCount,
+          primaryEmoji: sweep.primaryEmoji ?? null,
+        },
+      };
+    }
+    return { status: 200, body: { ok: true, slot } };
+  }
+
+  const msg = update.message || update.edited_message;
+  const chatId = msg?.chat?.id;
+  const text = (msg?.text || msg?.caption || "").trim();
+  if (!msg || !chatId || msg.from?.is_bot) {
+    return { status: 200, body: { ok: true, slot } };
+  }
+
+  const isEdited = Boolean(update.edited_message && !update.message);
+  const isPrivateChat = msg.chat?.type === "private";
+  const isGroupChat = msg.chat?.type === "group" || msg.chat?.type === "supergroup";
+
+  // 3) Instant big reaction + 10-message recent sweep using this bot's unique non-overlapping slotOffset!
+  let reactedEmoji: string | undefined;
+  let reactedCount = 0;
+  if (shouldReactToTelegramMessage(msg)) {
+    const sweep = await sweepRecentMessageReactions(config.botToken, chatId, msg.message_id, {
+      count: isGroupChat && !isEdited ? autoSweepCount : 1,
+      botRole: "swarm",
+      slotOffset: config.slotOffset,
+      anchorMsg: msg,
+      isBig: true,
+    });
+    reactedEmoji = sweep.primaryEmoji;
+    reactedCount = sweep.reactedCount;
+  }
+
+  if (isEdited || !text) {
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        slot,
+        label: config.label,
+        ...(reactedEmoji ? { reacted: reactedEmoji } : {}),
+        ...(reactedCount > 0 ? { reactedCount } : {}),
+      },
+    };
+  }
+
+  const cleanHandle = config.label.replace(/^@+/, "").toLowerCase();
+  const mentionRegex = cleanHandle ? new RegExp(`@${cleanHandle}\\b`, "i") : null;
+  const isExplicitMention = Boolean(mentionRegex && mentionRegex.test(text));
+  const isReplyToThisBot =
+    Boolean(cleanHandle) && msg.reply_to_message?.from?.username?.toLowerCase() === cleanHandle;
+
+  // In shared groups, only send text replies when explicitly addressed/replied to (avoid duplicating @reaction_news_bot).
+  if (!isPrivateChat && !isExplicitMention && !isReplyToThisBot) {
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        slot,
+        label: config.label,
+        mode: "auto-react-sweep",
+        reacted: reactedEmoji ?? null,
+        reactedCount,
+      },
+    };
+  }
+
+  const senderName = msg.from?.first_name || msg.from?.username;
+  const replyParameters = { message_id: msg.message_id };
+
+  if (text.startsWith("/")) {
+    const cmd = text.split(/\s+/)[0].split("@")[0].toLowerCase();
+    const rawArgs = text.replace(/^\/[a-zA-Z0-9_]+(?:@[a-zA-Z0-9_]+)?\s*/i, "").trim();
+
+    if (cmd === "/start" || cmd === "/help") {
+      const bots = getAllReactionCapableBots();
+      const card = buildReactionBotHelpCard(config.siteUrl, bots.length, autoSweepCount);
+      await callTelegramApi(config.botToken, "sendMessage", {
+        chat_id: chatId,
+        text: card.text.replace("@reaction_news_bot", config.label),
+        parse_mode: "HTML",
+        reply_markup: card.reply_markup,
+        reply_parameters: replyParameters,
+        link_preview_options: { is_disabled: true },
+      });
+      return { status: 200, body: { ok: true, slot, mode: "help", reactedCount } };
+    }
+
+    if (cmd === "/hype" || cmd === "/react" || cmd === "/boost" || cmd === "/wave") {
+      const requestedCount = parseRequestedReactionCount(rawArgs, 10);
+      const anchorId = msg.reply_to_message?.message_id || msg.message_id;
+      const wave = await fanOutReactionWave(chatId, anchorId, requestedCount, msg);
+      const perBotSummary = wave.perBot
+        .map((b) => `• <b>${escapeTelegramHtml(b.bot)}</b>: ${b.reactedCount}/${b.attemptedCount} reactions`)
+        .join("\n");
+      await callTelegramApi(config.botToken, "sendMessage", {
+        chat_id: chatId,
+        text: [
+          `🔥 <b>REACTION WAVE ACTIVATED!</b> (${escapeTelegramHtml(config.label)})`,
+          ``,
+          `⚡ Dropped <b>${wave.totalReactions} big animated reactions</b> across the latest <b>${requestedCount}</b> messages (${wave.botCount} coordinated bots):`,
+          perBotSummary,
+        ].join("\n"),
+        parse_mode: "HTML",
+        reply_parameters: replyParameters,
+        link_preview_options: { is_disabled: true },
+      });
+      return { status: 200, body: { ok: true, slot, mode: "hype-wave", wave } };
+    }
+
+    if (cmd === "/news") {
+      const randomSlot = Math.floor(Math.random() * CURATED_NEWS_PULSES.length);
+      const picked = pickNewsPulseForBroadcast({ slot: randomSlot });
+      const aiGen = await generateFreshTechNewsPulseWithGemini(
+        picked.pulse,
+        picked.slot,
+        rawArgs || undefined
+      );
+      const card = formatTelegramNewsPulseCard(aiGen.pulse, {
+        siteUrl: config.siteUrl,
+        slot: picked.slot,
+        total: picked.total,
+        header: rawArgs
+          ? `📰 <b>TECH &amp; DEV NEWS PULSE • ${escapeTelegramHtml(rawArgs.toUpperCase())}</b>`
+          : "📰 <b>TECH &amp; DEV NEWS PULSE • LIVE BRIEF</b>",
+      });
+      const sent = await callTelegramApi<{ message_id: number }>(config.botToken, "sendMessage", {
+        chat_id: chatId,
+        text: card.text.replace("@reaction_news_bot", config.label),
+        parse_mode: "HTML",
+        reply_markup: card.reply_markup,
+        reply_parameters: replyParameters,
+        link_preview_options: { is_disabled: true },
+      });
+      if (sent.ok && sent.result?.message_id) {
+        await fanOutReactionsToMessage(chatId, sent.result.message_id, {
+          text: `${aiGen.pulse.title} news tech`,
+        });
+      }
+      return { status: 200, body: { ok: true, slot, mode: "news", reactedCount } };
+    }
+
+    if (cmd === "/vibe" || cmd === "/poll") {
+      const pollRes = await sendVibePollToChat(config.botToken, chatId, msg.message_id);
+      return { status: 200, body: { ok: true, slot, mode: "vibe-poll", pollRes } };
+    }
+
+    if (cmd === "/status" || cmd === "/ping") {
+      const bots = getAllReactionCapableBots();
+      const botList = bots
+        .map((b) => `• <b>${escapeTelegramHtml(b.label)}</b> (slot #${b.slotOffset + 1})`)
+        .join("\n");
+      await callTelegramApi(config.botToken, "sendMessage", {
+        chat_id: chatId,
+        text: [
+          `⚡ <b>${escapeTelegramHtml(config.label)} • ONLINE</b>`,
+          ``,
+          `✅ <b>Auto-Sweep per message:</b> ${autoSweepCount} recent messages (big animations ON)`,
+          `🤝 <b>Coordinated Bots (${bots.length}):</b>`,
+          botList,
+        ].join("\n"),
+        parse_mode: "HTML",
+        reply_parameters: replyParameters,
+        link_preview_options: { is_disabled: true },
+      });
+      return { status: 200, body: { ok: true, slot, mode: "status", activeBots: bots.length } };
+    }
+
+    return { status: 200, body: { ok: true, slot, mode: "unknown-command", reactedCount } };
+  }
+
+  const cleanPrompt = mentionRegex ? text.replace(mentionRegex, "").trim() : text;
+  await callTelegramApi(config.botToken, "sendChatAction", {
+    chat_id: chatId,
+    action: "typing",
+  });
+  const aiReply = await askGeminiReactionBuddy({
+    message: cleanPrompt,
+    senderName,
+    replyToText: msg.reply_to_message?.text || msg.reply_to_message?.caption,
+  });
+  const sent = await callTelegramApi<{ message_id: number }>(config.botToken, "sendMessage", {
+    chat_id: chatId,
+    text: aiReply.htmlText,
+    parse_mode: "HTML",
+    reply_parameters: replyParameters,
+    link_preview_options: { is_disabled: true },
+  });
+  if (sent.ok && sent.result?.message_id) {
+    await fanOutReactionsToMessage(chatId, sent.result.message_id, { text: cleanPrompt });
+  }
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      slot,
+      label: config.label,
       mode: "reaction-buddy-chat",
       model: aiReply.model,
       reacted: reactedEmoji ?? null,
