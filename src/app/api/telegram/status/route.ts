@@ -23,8 +23,10 @@ export async function GET() {
       ...res.body,
       reactions: {
         autoReact: true,
-        scope: "commands, mentions, job-topics, and DMs",
-        primaryEmoji: "❤️",
+        isBig: true,
+        sweepCountPerMessage: 5,
+        scope: "all group messages, broadcasts, commands, and DMs",
+        slotOffset: 2,
       },
     },
     { status: res.status }

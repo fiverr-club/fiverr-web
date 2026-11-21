@@ -30,7 +30,9 @@ export async function GET() {
       },
       reactions: {
         autoReact: true,
-        primaryEmoji: "❤️",
+        isBig: true,
+        sweepCountPerMessage: 5,
+        slotOffset: 1,
       },
     },
     { status: res.status }

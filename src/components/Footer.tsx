@@ -183,6 +183,15 @@ export function Footer() {
                   <span>@Fiverrex_bot (Job Feed)</span>
                   <ExternalLink className="h-3 w-3" />
                 </a>
+                <a
+                  href="https://t.me/reaction_news_bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between text-gray-600 hover:text-[#1dbf73]"
+                >
+                  <span>@reaction_news_bot (Reaction &amp; News)</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
             </div>
           </div>

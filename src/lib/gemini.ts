@@ -2,6 +2,10 @@ import {
   AI_AGENT_LESSONS,
   type AgentKnowledgeLesson,
 } from "@/lib/ai-agent-knowledge";
+import {
+  CURATED_NEWS_PULSES,
+  type TechNewsPulse,
+} from "@/lib/reaction-bot";
 
 export const GEMINI_MODELS = [
   "gemini-3-flash-preview",
@@ -315,6 +319,167 @@ export async function askGeminiAgentTutor(params: {
         `📌 <b>${escapeHtml(fallbackLesson.title)}</b>`,
         `💡 ${escapeHtml(fallbackLesson.summary)}`,
         `⚠️ <i>Avoid: ${escapeHtml(fallbackLesson.antiPattern)}</i>`,
+      ].join("\n"),
+    };
+  }
+
+  return {
+    ok: true,
+    model: res.model,
+    htmlText: markdownToTelegramHtml(res.text),
+  };
+}
+
+const VALID_NEWS_CATEGORIES = new Set<TechNewsPulse["category"]>([
+  "AI & Models",
+  "DevTools & Cloud",
+  "Web & Frontend",
+  "Open Source",
+  "Backend & Systems",
+  "Community & Jobs",
+]);
+
+export async function generateFreshTechNewsPulseWithGemini(
+  seedPulse: TechNewsPulse,
+  slot: number,
+  topicOverride?: string
+): Promise<{ ok: boolean; pulse: TechNewsPulse; model?: string; error?: string }> {
+  const focusLine = topicOverride?.trim()
+    ? `Focus specifically on this requested developer/tech topic: "${topicOverride.trim()}".`
+    : `Category focus: "${seedPulse.category}" — inspired by (do NOT copy verbatim) "${seedPulse.title}".`;
+
+  const prompt = [
+    `Write ONE crisp, high-energy developer news & engineering trend pulse for a Telegram tech community (@devcommunity101).`,
+    focusLine,
+    `Slot index: #${slot} (vary angle and insights so every post feels fresh and engaging).`,
+    ``,
+    `Return strict JSON with this exact shape:`,
+    `{`,
+    `  "category": "AI & Models" | "DevTools & Cloud" | "Web & Frontend" | "Open Source" | "Backend & Systems" | "Community & Jobs",`,
+    `  "title": "Punchy 7-13 word headline",`,
+    `  "summary": "2 concise, insightful sentences explaining why builders care right now",`,
+    `  "highlights": ["Crisp bullet 1", "Crisp bullet 2", "Crisp bullet 3"],`,
+    `  "discussionPrompt": "1 short engaging question to spark replies and reactions in chat",`,
+    `  "tags": ["TagOne", "TagTwo", "TagThree"]`,
+    `}`,
+  ].join("\n");
+
+  const res = await callGeminiGenerateContent({
+    systemInstruction:
+      "You are Reaction News Bot (@reaction_news_bot), an energetic senior tech editor curating sharp, practical developer news pulses for engineers. Output valid JSON only.",
+    prompt,
+    responseMimeType: "application/json",
+    temperature: 0.85,
+    maxOutputTokens: 700,
+    timeoutMs: 9000,
+  });
+
+  if (!res.ok || !res.text) {
+    return { ok: false, pulse: seedPulse, error: res.error };
+  }
+
+  try {
+    const cleanJson = res.text
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    const parsed = JSON.parse(cleanJson) as Partial<TechNewsPulse>;
+
+    if (
+      typeof parsed.title !== "string" ||
+      parsed.title.trim().length < 8 ||
+      typeof parsed.summary !== "string" ||
+      parsed.summary.trim().length < 20 ||
+      !Array.isArray(parsed.highlights) ||
+      parsed.highlights.length < 2
+    ) {
+      return { ok: false, pulse: seedPulse, error: "Incomplete Gemini news JSON." };
+    }
+
+    const category =
+      parsed.category && VALID_NEWS_CATEGORIES.has(parsed.category)
+        ? parsed.category
+        : seedPulse.category;
+
+    const generated: TechNewsPulse = {
+      id: `${seedPulse.id}-gemini-${Date.now()}`,
+      category,
+      title: parsed.title.trim(),
+      summary: parsed.summary.trim(),
+      highlights: parsed.highlights
+        .filter((h): h is string => typeof h === "string" && h.trim().length > 0)
+        .slice(0, 3),
+      discussionPrompt:
+        typeof parsed.discussionPrompt === "string" && parsed.discussionPrompt.trim().length > 5
+          ? parsed.discussionPrompt.trim()
+          : seedPulse.discussionPrompt,
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags
+            .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+            .map((t) => t.replace(/^#+/, "").replace(/[^a-zA-Z0-9]/g, ""))
+            .filter(Boolean)
+            .slice(0, 4)
+        : seedPulse.tags,
+    };
+
+    return { ok: true, pulse: generated, model: res.model };
+  } catch (err) {
+    return {
+      ok: false,
+      pulse: seedPulse,
+      error: err instanceof Error ? err.message : "Failed to parse Gemini news JSON.",
+    };
+  }
+}
+
+export async function askGeminiReactionBuddy(params: {
+  message: string;
+  senderName?: string;
+  replyToText?: string;
+}): Promise<{ ok: boolean; htmlText: string; model?: string; error?: string }> {
+  const cleanMessage = params.message.trim();
+  if (!cleanMessage) {
+    return {
+      ok: false,
+      htmlText:
+        "🔥 Hey! Tag me with any tech topic, or try <code>/hype 10</code>, <code>/news</code>, or <code>/vibe</code>!",
+    };
+  }
+
+  const userPromptParts = [
+    params.senderName ? `Community member: ${params.senderName}` : null,
+    params.replyToText
+      ? `Message being replied to:\n"""\n${params.replyToText.slice(0, 600)}\n"""`
+      : null,
+    `Message: ${cleanMessage}`,
+  ].filter(Boolean);
+
+  const res = await callGeminiGenerateContent({
+    systemInstruction: [
+      "You are Reaction News Bot (@reaction_news_bot), an upbeat, friendly community engagement & tech news bot in Dev Community Telegram group.",
+      "Reply naturally in the same language as the user's message (Vietnamese if they write Vietnamese, English if they write English).",
+      "Keep replies punchy, warm, helpful, and concise (under 140 words), with 1-3 tasteful emojis and practical tech/community insight.",
+    ].join(" "),
+    prompt: userPromptParts.join("\n\n"),
+    responseMimeType: "text/plain",
+    temperature: 0.75,
+    maxOutputTokens: 500,
+    timeoutMs: 9000,
+  });
+
+  if (!res.ok || !res.text) {
+    const fallback =
+      CURATED_NEWS_PULSES[Math.floor(Math.random() * CURATED_NEWS_PULSES.length)];
+    return {
+      ok: false,
+      error: res.error,
+      htmlText: [
+        `🔥 <b>Always hyped to chat!</b>`,
+        ``,
+        `📰 Quick pulse: <b>${escapeHtml(fallback.title)}</b>`,
+        `💡 ${escapeHtml(fallback.summary)}`,
+        ``,
+        `Try <code>/hype 10</code> to blast reactions across the latest 10 posts, or <code>/news</code> for a fresh pulse!`,
       ].join("\n"),
     };
   }
