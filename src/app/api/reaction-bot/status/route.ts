@@ -5,6 +5,8 @@ import {
   fetchBotHealthStatus,
   getAllReactionCapableBots,
   getReactionBotConfig,
+  getReactionPrimaryEmojiOverride,
+  getReactionStackMode,
   getReactionSweepCount,
 } from "@/lib/telegram";
 
@@ -39,9 +41,12 @@ export async function GET() {
       reactions: {
         autoReact: true,
         instantAllBotBlastOnMessage: true,
+        stackMode: getReactionStackMode(),
+        primaryEmojiOverride: getReactionPrimaryEmojiOverride(),
         isBig: true,
         autoSweepCountPerBot: autoSweepCount,
         maxHypeWavePerBot: 10,
+        maxSlotBots: 30,
         coordinatedBotsCount: activeBots.length,
         coordinatedBots: activeBots.map((b) => ({
           role: b.role,
@@ -51,7 +56,7 @@ export async function GET() {
         interactiveActionBarButtons: 8,
         telegramSingleBotPerMessageLimit: 1,
         swarmScalingHint:
-          "Add 2-7 extra BotFather tokens via REACTION_SWARM_BOT_TOKENS (or REACTION_BOT_TOKEN_2..10) to drop 5-10 simultaneous native reactions on every single message.",
+          "All bots now stack on the SAME emoji per message (e.g. ❤️ xN) to maximize counts. Add more BotFather tokens via REACTION_BOT_TOKEN_2..30 or REACTION_SWARM_BOT_TOKENS to stack ❤️ 20+ on every single message.",
       },
     },
     { status: res.status }

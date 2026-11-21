@@ -4,7 +4,9 @@ import {
   fanOutReactionsToMessage,
   fanOutReactionWave,
   getReactionBotConfig,
+  TELEGRAM_SAFE_REACTION_EMOJIS,
   verifySharedSecret,
+  type TelegramSafeReactionEmoji,
 } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,7 @@ export async function POST(req: NextRequest) {
     messageId?: number;
     count?: number;
     mode?: "single" | "sweep";
+    emoji?: string;
   } = {};
   try {
     body = (await req.json()) as typeof body;
@@ -43,13 +46,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const overrideEmoji =
+    body.emoji && (TELEGRAM_SAFE_REACTION_EMOJIS as readonly string[]).includes(body.emoji.trim())
+      ? (body.emoji.trim() as TelegramSafeReactionEmoji)
+      : null;
+
   const mode = body.mode === "single" ? "single" : "sweep";
   if (mode === "single") {
-    const res = await fanOutReactionsToMessage(chatId, messageId);
-    return NextResponse.json({ ok: true, mode, chatId, messageId, ...res });
+    const res = await fanOutReactionsToMessage(chatId, messageId, undefined, { overrideEmoji });
+    return NextResponse.json({ ok: true, mode, chatId, messageId, overrideEmoji, ...res });
   }
 
   const count = Math.max(1, Math.min(10, typeof body.count === "number" ? body.count : 8));
-  const wave = await fanOutReactionWave(chatId, messageId, count);
-  return NextResponse.json({ ok: true, mode, chatId, anchorMessageId: messageId, countPerBot: count, ...wave });
+  const wave = await fanOutReactionWave(chatId, messageId, count, undefined, overrideEmoji);
+  return NextResponse.json({
+    ok: true,
+    mode,
+    chatId,
+    anchorMessageId: messageId,
+    countPerBot: count,
+    overrideEmoji,
+    ...wave,
+  });
 }

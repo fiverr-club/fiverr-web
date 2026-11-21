@@ -114,6 +114,24 @@ export interface ReactionBotParticipant {
   slotOffset: number;
 }
 
+export type ReactionStackMode = "same" | "heart" | "top2" | "distinct";
+
+export function getReactionStackMode(): ReactionStackMode {
+  const raw = process.env.REACTION_STACK_MODE?.trim().toLowerCase();
+  if (raw === "heart" || raw === "top2" || raw === "distinct" || raw === "same") {
+    return raw;
+  }
+  return "same";
+}
+
+export function getReactionPrimaryEmojiOverride(): TelegramSafeReactionEmoji | null {
+  const raw = process.env.REACTION_PRIMARY_EMOJI?.trim();
+  if (!raw) return null;
+  return (TELEGRAM_SAFE_REACTION_EMOJIS as readonly string[]).includes(raw)
+    ? (raw as TelegramSafeReactionEmoji)
+    : null;
+}
+
 export function getAllReactionCapableBots(): ReactionBotParticipant[] {
   const seen = new Set<string>();
   const bots: ReactionBotParticipant[] = [];
@@ -129,8 +147,8 @@ export function getAllReactionCapableBots(): ReactionBotParticipant[] {
   pushUnique("agent", "@agent_programming_bot", process.env.AGENT_BOT_TOKEN);
   pushUnique("fiverrex", "@Fiverrex_bot", process.env.TELEGRAM_BOT_TOKEN);
 
-  // Support numbered env vars REACTION_BOT_TOKEN_2 .. REACTION_BOT_TOKEN_10
-  for (let i = 2; i <= 10; i++) {
+  // Support numbered env vars REACTION_BOT_TOKEN_2 .. REACTION_BOT_TOKEN_30 (for stacking up to 20-30+ hearts!)
+  for (let i = 2; i <= 30; i++) {
     const customLabel = process.env[`REACTION_BOT_LABEL_${i}`]?.trim();
     pushUnique(
       "swarm",
@@ -139,7 +157,7 @@ export function getAllReactionCapableBots(): ReactionBotParticipant[] {
     );
   }
 
-  // Also support comma/newline/space-separated REACTION_SWARM_BOT_TOKENS
+  // Also support comma/newline/space-separated REACTION_SWARM_BOT_TOKENS (unlimited bots)
   const swarmRaw = process.env.REACTION_SWARM_BOT_TOKENS?.trim();
   if (swarmRaw) {
     swarmRaw
@@ -161,7 +179,7 @@ export interface ReactionSlotBotConfig extends TelegramConfig {
 }
 
 export function getReactionSlotBotConfig(slot: number): ReactionSlotBotConfig | null {
-  if (!Number.isInteger(slot) || slot < 2 || slot > 10) {
+  if (!Number.isInteger(slot) || slot < 2 || slot > 30) {
     return null;
   }
 
@@ -947,16 +965,77 @@ function getContextReactionPool(
   return ["❤️", "🔥", "⚡", "🤩", "👏", "💯", "👍", "🥰", "🏆", "😎"];
 }
 
+const HEART_WEIGHTED_STACK_POOL: readonly TelegramSafeReactionEmoji[] = [
+  "❤️",
+  "❤️",
+  "🔥",
+  "❤️",
+  "❤️",
+  "⚡",
+  "❤️",
+  "🎉",
+  "🔥",
+  "❤️",
+];
+
 export function pickTelegramReactionEmoji(
   msg: Partial<TelegramIncomingMessage> & { message_id: number },
   botRole: ReactionBotRole = "agent",
-  slotOffsetOverride?: number
+  slotOffsetOverride?: number,
+  overrideEmoji?: TelegramSafeReactionEmoji | null
 ): TelegramSafeReactionEmoji {
+  if (overrideEmoji) {
+    return overrideEmoji;
+  }
+
+  const envPrimary = getReactionPrimaryEmojiOverride();
+  if (envPrimary) {
+    return envPrimary;
+  }
+
+  const stackMode = getReactionStackMode();
+  if (stackMode === "heart") {
+    return "❤️";
+  }
+
   const defaultOffset =
     botRole === "reaction" ? 0 : botRole === "agent" ? 1 : botRole === "fiverrex" ? 2 : 3;
   const slotOffset =
     typeof slotOffsetOverride === "number" ? slotOffsetOverride : defaultOffset;
   const pool = getContextReactionPool(msg);
+  const hasExplicitContext = Boolean(
+    msg.text?.trim() ||
+      msg.caption?.trim() ||
+      msg.sticker?.emoji ||
+      msg.new_chat_members?.length ||
+      msg.photo ||
+      msg.video ||
+      msg.video_note ||
+      msg.animation ||
+      msg.document ||
+      msg.voice ||
+      msg.audio ||
+      msg.poll
+  );
+
+  // "same" (default): EVERY bot picks the EXACT SAME emoji for a message so the counter stacks up (e.g. ❤️ 4, ❤️ 20)!
+  if (stackMode === "same") {
+    if (hasExplicitContext) {
+      return pool[0];
+    }
+    return pickFromUniquePool(HEART_WEIGHTED_STACK_POOL, msg.message_id, 0);
+  }
+
+  // "top2": 75% of bots stack on the #1 primary emoji (e.g. ❤️ 15), 25% stack on #2 (e.g. 🔥 5).
+  if (stackMode === "top2") {
+    const primary = hasExplicitContext
+      ? pool[0]
+      : pickFromUniquePool(HEART_WEIGHTED_STACK_POOL, msg.message_id, 0);
+    const secondary = pool.find((e) => e !== primary) || "🔥";
+    return Math.abs(slotOffset) % 4 === 3 ? secondary : primary;
+  }
+
+  // "distinct": each bot uses a different non-overlapping emoji.
   return pickFromUniquePool(pool, msg.message_id, slotOffset);
 }
 
@@ -1045,6 +1124,7 @@ export async function sweepRecentMessageReactions(
     slotOffset?: number;
     anchorMsg?: Partial<TelegramIncomingMessage>;
     isBig?: boolean;
+    overrideEmoji?: TelegramSafeReactionEmoji | null;
   }
 ): Promise<{
   reactedCount: number;
@@ -1058,6 +1138,7 @@ export async function sweepRecentMessageReactions(
   const botRole = options?.botRole ?? "reaction";
   const slotOffset = options?.slotOffset;
   const isBig = options?.isBig ?? true;
+  const overrideEmoji = options?.overrideEmoji ?? null;
 
   const targetIds: number[] = [];
   for (let i = 0; i < count; i++) {
@@ -1092,7 +1173,7 @@ export async function sweepRecentMessageReactions(
           mid === anchorMessageId && options?.anchorMsg
             ? { ...options.anchorMsg, message_id: mid }
             : { message_id: mid };
-        const emoji = pickTelegramReactionEmoji(msgSeed, botRole, slotOffset);
+        const emoji = pickTelegramReactionEmoji(msgSeed, botRole, slotOffset, overrideEmoji);
         return reactToTelegramMessageDetailed(botToken, chatId, mid, emoji, { isBig }).then(
           (res) => ({ mid, res })
         );
@@ -1134,7 +1215,11 @@ export async function fanOutReactionsToMessage(
   chatId: number | string,
   messageId: number,
   contextHint?: Partial<TelegramIncomingMessage>,
-  options?: { excludeRoles?: ReactionBotRole[]; isBig?: boolean }
+  options?: {
+    excludeRoles?: ReactionBotRole[];
+    isBig?: boolean;
+    overrideEmoji?: TelegramSafeReactionEmoji | null;
+  }
 ): Promise<{
   reactedCount: number;
   totalBots: number;
@@ -1151,7 +1236,8 @@ export async function fanOutReactionsToMessage(
       const emoji = pickTelegramReactionEmoji(
         { ...contextHint, message_id: messageId },
         bot.role,
-        bot.slotOffset
+        bot.slotOffset,
+        options?.overrideEmoji ?? null
       );
       const res = await reactToTelegramMessageDetailed(bot.token, chatId, messageId, emoji, {
         isBig: options?.isBig ?? true,
@@ -1172,10 +1258,12 @@ export async function fanOutReactionWave(
   chatId: number | string,
   anchorMessageId: number,
   countPerBot = 8,
-  anchorMsg?: Partial<TelegramIncomingMessage>
+  anchorMsg?: Partial<TelegramIncomingMessage>,
+  overrideEmoji?: TelegramSafeReactionEmoji | null
 ): Promise<{
   totalReactions: number;
   botCount: number;
+  stackedEmoji: TelegramSafeReactionEmoji | null;
   perBot: Array<{ bot: string; reactedCount: number; attemptedCount: number; rateLimited: boolean }>;
 }> {
   const bots = getAllReactionCapableBots();
@@ -1189,6 +1277,7 @@ export async function fanOutReactionWave(
         slotOffset: bot.slotOffset,
         anchorMsg,
         isBig: true,
+        overrideEmoji: overrideEmoji ?? null,
       });
       return {
         bot: bot.label,
@@ -1203,6 +1292,7 @@ export async function fanOutReactionWave(
   return {
     totalReactions,
     botCount: bots.length,
+    stackedEmoji: overrideEmoji ?? null,
     perBot,
   };
 }
@@ -1815,24 +1905,38 @@ export async function handleReactionBotWebhookRequest(
       };
     }
 
-    if (cmd === "/hype" || cmd === "/react" || cmd === "/boost" || cmd === "/wave") {
+    if (
+      cmd === "/hype" ||
+      cmd === "/react" ||
+      cmd === "/boost" ||
+      cmd === "/wave" ||
+      cmd === "/tim" ||
+      cmd === "/heart"
+    ) {
       const requestedCount = parseRequestedReactionCount(rawArgs, 10);
+      const explicitEmoji =
+        cmd === "/tim" || cmd === "/heart"
+          ? ("❤️" as TelegramSafeReactionEmoji)
+          : (TELEGRAM_SAFE_REACTION_EMOJIS.find((e) => rawArgs.includes(e)) ?? null);
       const anchorId = msg.reply_to_message?.message_id || msg.message_id;
-      const wave = await fanOutReactionWave(chatId, anchorId, requestedCount, msg);
+      const wave = await fanOutReactionWave(chatId, anchorId, requestedCount, msg, explicitEmoji);
 
       const perBotSummary = wave.perBot
         .map((b) => `• <b>${escapeTelegramHtml(b.bot)}</b>: ${b.reactedCount}/${b.attemptedCount} reactions`)
         .join("\n");
+      const emojiLabel = explicitEmoji
+        ? `stacked <b>${explicitEmoji} ×${wave.botCount}</b> per message`
+        : `stacked mode (<b>${getReactionStackMode()}</b>, up to <b>×${wave.botCount}</b> per emoji)`;
 
       const sent = await callTelegramApi<{ message_id: number }>(config.botToken, "sendMessage", {
         chat_id: chatId,
         text: [
           `🔥 <b>REACTION WAVE ACTIVATED!</b>`,
           ``,
-          `⚡ Dropped <b>${wave.totalReactions} big animated reactions</b> across the latest <b>${requestedCount}</b> messages (${wave.botCount} coordinated bots):`,
+          `⚡ Dropped <b>${wave.totalReactions} big animated reactions</b> (${emojiLabel}) across the latest <b>${requestedCount}</b> messages:`,
           perBotSummary,
           ``,
-          `💡 <i>Tip: Reply to any post with <code>/hype 10</code> or tap an emoji button below!</i>`,
+          `💡 <i>Tip: Use <code>/tim 10</code> or <code>/hype ❤️ 10</code> to stack ❤️ on the latest 10 posts!</i>`,
         ].join("\n"),
         parse_mode: "HTML",
         reply_parameters: replyParameters,
@@ -2183,10 +2287,21 @@ export async function handleReactionSlotWebhookRequest(
       return { status: 200, body: { ok: true, slot, mode: "help", reactedCount } };
     }
 
-    if (cmd === "/hype" || cmd === "/react" || cmd === "/boost" || cmd === "/wave") {
+    if (
+      cmd === "/hype" ||
+      cmd === "/react" ||
+      cmd === "/boost" ||
+      cmd === "/wave" ||
+      cmd === "/tim" ||
+      cmd === "/heart"
+    ) {
       const requestedCount = parseRequestedReactionCount(rawArgs, 10);
+      const explicitEmoji =
+        cmd === "/tim" || cmd === "/heart"
+          ? ("❤️" as TelegramSafeReactionEmoji)
+          : (TELEGRAM_SAFE_REACTION_EMOJIS.find((e) => rawArgs.includes(e)) ?? null);
       const anchorId = msg.reply_to_message?.message_id || msg.message_id;
-      const wave = await fanOutReactionWave(chatId, anchorId, requestedCount, msg);
+      const wave = await fanOutReactionWave(chatId, anchorId, requestedCount, msg, explicitEmoji);
       const perBotSummary = wave.perBot
         .map((b) => `• <b>${escapeTelegramHtml(b.bot)}</b>: ${b.reactedCount}/${b.attemptedCount} reactions`)
         .join("\n");
@@ -2195,7 +2310,7 @@ export async function handleReactionSlotWebhookRequest(
         text: [
           `🔥 <b>REACTION WAVE ACTIVATED!</b> (${escapeTelegramHtml(config.label)})`,
           ``,
-          `⚡ Dropped <b>${wave.totalReactions} big animated reactions</b> across the latest <b>${requestedCount}</b> messages (${wave.botCount} coordinated bots):`,
+          `⚡ Dropped <b>${wave.totalReactions} big animated reactions</b> across the latest <b>${requestedCount}</b> messages (${wave.botCount} coordinated bots${explicitEmoji ? `, stacked ${explicitEmoji}` : ""}):`,
           perBotSummary,
         ].join("\n"),
         parse_mode: "HTML",

@@ -10,9 +10,9 @@ export async function POST(
 ) {
   const { slot: rawSlot } = await context.params;
   const slot = Number.parseInt(rawSlot, 10);
-  if (!Number.isInteger(slot) || slot < 2 || slot > 10) {
+  if (!Number.isInteger(slot) || slot < 2 || slot > 30) {
     return NextResponse.json(
-      { ok: false, error: "Invalid reaction bot slot (expected 2-10)." },
+      { ok: false, error: "Invalid reaction bot slot (expected 2-30)." },
       { status: 400 }
     );
   }
